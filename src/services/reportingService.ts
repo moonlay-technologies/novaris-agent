@@ -19,18 +19,8 @@ export class ReportingService {
       },
     });
 
-    // Monitor online/offline status
-    if (typeof window !== 'undefined') {
-      window.addEventListener('online', () => {
-        this.isOnline = true;
-        this.logger.info('Network connection restored');
-        this.processQueue();
-      });
-      window.addEventListener('offline', () => {
-        this.isOnline = false;
-        this.logger.warn('Network connection lost');
-      });
-    }
+    // Monitor online/offline status (Node.js environment)
+    // Offline status is detected by failed network requests
   }
 
   async registerDevice(deviceInfo: DeviceReport['deviceInfo']): Promise<number> {
