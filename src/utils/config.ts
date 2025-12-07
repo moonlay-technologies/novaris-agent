@@ -6,29 +6,7 @@ const CONFIG_FILE = path.join(process.cwd(), 'config.json');
 const ENV_CONFIG_FILE = process.env.NOVARIS_CONFIG_FILE || CONFIG_FILE;
 
 export function loadConfig(): AgentConfig {
-  // First, try to load from environment variables
-  const envConfig: Partial<AgentConfig> = {
-    apiUrl: process.env.NOVARIS_API_URL || DEFAULT_CONFIG.apiUrl,
-    apiKey: process.env.NOVARIS_API_KEY || DEFAULT_CONFIG.apiKey,
-    deviceId: process.env.NOVARIS_DEVICE_ID ? parseInt(process.env.NOVARIS_DEVICE_ID, 10) : undefined,
-    hostname: process.env.NOVARIS_HOSTNAME,
-    collectInterval: process.env.NOVARIS_COLLECT_INTERVAL
-      ? parseInt(process.env.NOVARIS_COLLECT_INTERVAL, 10)
-      : DEFAULT_CONFIG.collectInterval,
-    reportInterval: process.env.NOVARIS_REPORT_INTERVAL
-      ? parseInt(process.env.NOVARIS_REPORT_INTERVAL, 10)
-      : DEFAULT_CONFIG.reportInterval,
-    retryAttempts: process.env.NOVARIS_RETRY_ATTEMPTS
-      ? parseInt(process.env.NOVARIS_RETRY_ATTEMPTS, 10)
-      : DEFAULT_CONFIG.retryAttempts,
-    retryDelay: process.env.NOVARIS_RETRY_DELAY
-      ? parseInt(process.env.NOVARIS_RETRY_DELAY, 10)
-      : DEFAULT_CONFIG.retryDelay,
-    logLevel: (process.env.NOVARIS_LOG_LEVEL as AgentConfig['logLevel']) || DEFAULT_CONFIG.logLevel,
-    logFile: process.env.NOVARIS_LOG_FILE,
-  };
-
-  // Then, try to load from config file
+  // First, try to load from config file
   let fileConfig: Partial<AgentConfig> = {};
   if (fs.existsSync(ENV_CONFIG_FILE)) {
     try {
@@ -39,7 +17,40 @@ export function loadConfig(): AgentConfig {
     }
   }
 
-  // Merge: environment variables override file config, file config overrides defaults
+  // Then, load from environment variables (only if they're actually set)
+  const envConfig: Partial<AgentConfig> = {};
+  if (process.env.NOVARIS_API_URL) {
+    envConfig.apiUrl = process.env.NOVARIS_API_URL;
+  }
+  if (process.env.NOVARIS_API_KEY) {
+    envConfig.apiKey = process.env.NOVARIS_API_KEY;
+  }
+  if (process.env.NOVARIS_DEVICE_ID) {
+    envConfig.deviceId = parseInt(process.env.NOVARIS_DEVICE_ID, 10);
+  }
+  if (process.env.NOVARIS_HOSTNAME) {
+    envConfig.hostname = process.env.NOVARIS_HOSTNAME;
+  }
+  if (process.env.NOVARIS_COLLECT_INTERVAL) {
+    envConfig.collectInterval = parseInt(process.env.NOVARIS_COLLECT_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_REPORT_INTERVAL) {
+    envConfig.reportInterval = parseInt(process.env.NOVARIS_REPORT_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_RETRY_ATTEMPTS) {
+    envConfig.retryAttempts = parseInt(process.env.NOVARIS_RETRY_ATTEMPTS, 10);
+  }
+  if (process.env.NOVARIS_RETRY_DELAY) {
+    envConfig.retryDelay = parseInt(process.env.NOVARIS_RETRY_DELAY, 10);
+  }
+  if (process.env.NOVARIS_LOG_LEVEL) {
+    envConfig.logLevel = process.env.NOVARIS_LOG_LEVEL as AgentConfig['logLevel'];
+  }
+  if (process.env.NOVARIS_LOG_FILE) {
+    envConfig.logFile = process.env.NOVARIS_LOG_FILE;
+  }
+
+  // Merge: defaults -> file config -> environment variables (env overrides file, file overrides defaults)
   const config: AgentConfig = {
     ...DEFAULT_CONFIG,
     ...fileConfig,
