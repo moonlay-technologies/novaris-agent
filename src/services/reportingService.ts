@@ -23,7 +23,130 @@ export class ReportingService {
     // Offline status is detected by failed network requests
   }
 
-  async registerDevice(deviceInfo: DeviceReport['deviceInfo']): Promise<number> {
+  async findAssetByTag(assetTag: string): Promise<{ id: number; deviceId?: number } | null> {
+    const maxRetries = this.config.retryAttempts;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        this.logger.debug(`Searching for asset by tag: ${assetTag} (attempt ${attempt + 1}/${maxRetries})...`);
+        
+        const response = await this.apiClient.get(`/assets/by-tag/${encodeURIComponent(assetTag)}`);
+        
+        const asset = response.data?.data;
+        if (!asset) {
+          this.logger.debug(`Asset with tag ${assetTag} not found`);
+          return null;
+        }
+
+        this.logger.info(`Found asset with ID: ${asset.id} for tag: ${assetTag}`);
+        
+        // Check if asset has a device linked (device_id might be in the response)
+        return {
+          id: asset.id,
+          deviceId: asset.device_id || undefined,
+        };
+      } catch (error: any) {
+        lastError = error;
+        const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
+        
+        if (isNetworkError) {
+          this.isOnline = false;
+          this.logger.warn(`Network error during asset search (attempt ${attempt + 1}/${maxRetries})`);
+        } else if (error.response?.status === 404) {
+          // Asset not found is not an error, just return null
+          this.logger.debug(`Asset with tag ${assetTag} not found`);
+          return null;
+        } else {
+          this.logger.error(`Asset search failed (attempt ${attempt + 1}/${maxRetries})`, {
+            status: error.response?.status,
+            message: error.response?.data?.error || error.message,
+          });
+        }
+
+        if (attempt < maxRetries - 1 && error.response?.status !== 404) {
+          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          this.logger.info(`Retrying in ${delay}ms...`);
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    // If all retries failed and it wasn't a 404, throw error
+    if (lastError && lastError.message && !lastError.message.includes('404')) {
+      throw lastError;
+    }
+
+    return null;
+  }
+
+  async createAsset(assetTag: string, deviceInfo: DeviceReport['deviceInfo']): Promise<number> {
+    const maxRetries = this.config.retryAttempts;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        this.logger.info(`Creating asset with tag: ${assetTag} (attempt ${attempt + 1}/${maxRetries})...`);
+        
+        const response = await this.apiClient.post('/assets/register', {
+          asset_tag: assetTag,
+          serial_number: deviceInfo.serialNumber,
+          name: `${deviceInfo.hostname} (Auto-created)`,
+        });
+
+        const asset = response.data?.data;
+        if (!asset || !asset.id) {
+          throw new Error('Asset ID not found in response');
+        }
+
+        this.logger.info(`Asset created successfully with ID: ${asset.id}`);
+        return asset.id;
+      } catch (error: any) {
+        lastError = error;
+        const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
+        
+        if (isNetworkError) {
+          this.isOnline = false;
+          this.logger.warn(`Network error during asset creation (attempt ${attempt + 1}/${maxRetries})`);
+        } else {
+          this.logger.error(`Asset creation failed (attempt ${attempt + 1}/${maxRetries})`, {
+            status: error.response?.status,
+            message: error.response?.data?.error || error.message,
+          });
+        }
+
+        if (attempt < maxRetries - 1) {
+          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          this.logger.info(`Retrying in ${delay}ms...`);
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    throw lastError || new Error('Failed to create asset after all retries');
+  }
+
+  async findDeviceByAssetTag(assetTag: string): Promise<number | null> {
+    // First, search for asset by tag
+    const asset = await this.findAssetByTag(assetTag);
+    
+    if (!asset) {
+      // Asset not found, will need to create it
+      return null;
+    }
+
+    // If asset has a device linked, return device ID
+    if (asset.deviceId) {
+      this.logger.info(`Found device ID: ${asset.deviceId} for asset tag: ${assetTag}`);
+      return asset.deviceId;
+    }
+
+    // Asset exists but no device linked
+    this.logger.debug(`Asset found but no device linked. Asset ID: ${asset.id}`);
+    return null;
+  }
+
+  async registerDevice(deviceInfo: DeviceReport['deviceInfo'], assetTag: string): Promise<number> {
     const maxRetries = this.config.retryAttempts;
     let lastError: Error | null = null;
 
@@ -38,6 +161,7 @@ export class ReportingService {
           os_version: deviceInfo.osVersion,
           ip_address: deviceInfo.ipAddress,
           mac_address: deviceInfo.macAddress,
+          asset_tag: assetTag, // Include asset tag in registration
         });
 
         const deviceId = response.data?.data?.id || response.data?.id;
@@ -94,7 +218,7 @@ export class ReportingService {
           collected_at: report.healthMetrics.collectedAt.toISOString(),
         };
 
-        await this.apiClient.post(`/devices/${deviceId}/health`, payload);
+        const response = await this.apiClient.post(`/devices/${deviceId}/health`, payload);
 
         // Also sync software list if provided
         if (report.softwareList && report.softwareList.length > 0) {

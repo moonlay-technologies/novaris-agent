@@ -15,14 +15,14 @@ export class SoftwareCollector {
 
       // Get OS info to determine platform
       const osInfo = await si.osInfo();
-      const platform = osInfo.platform;
+      const platform = osInfo.platform.toLowerCase();
 
       // Use platform-specific methods to collect installed software
-      if (platform === 'win32') {
+      if (platform === 'win32' || platform === 'windows') {
         await this.collectWindowsSoftware(softwareList);
-      } else if (platform === 'darwin') {
+      } else if (platform === 'darwin' || platform === 'macos') {
         await this.collectMacSoftware(softwareList);
-      } else if (platform === 'linux') {
+      } else if (platform === 'linux' || platform === 'ubuntu' || platform === 'debian' || platform === 'redhat' || platform === 'centos' || platform === 'fedora') {
         await this.collectLinuxSoftware(softwareList);
       } else {
         this.logger.warn(`Unsupported platform for software collection: ${platform}`);

@@ -35,9 +35,14 @@ export class AgentService {
     this.isRunning = true;
 
     try {
-      // Initial device registration
+      // Validate asset tag is provided
+      if (!this.config.assetTag) {
+        throw new Error('Asset Tag is required. Please set NOVARIS_ASSET_TAG environment variable or config.json');
+      }
+
+      // Initial device registration or lookup
       if (!this.config.deviceId) {
-        await this.registerDevice();
+        await this.registerOrFindDevice();
       }
 
       // Start collecting and reporting
@@ -76,19 +81,48 @@ export class AgentService {
     this.logger.info('Novaris Agent stopped');
   }
 
-  private async registerDevice(): Promise<void> {
+  private async registerOrFindDevice(): Promise<void> {
     try {
-      this.logger.info('Registering device with server...');
+      this.logger.info(`Looking up or registering device with asset tag: ${this.config.assetTag}`);
+      
+      // Step 1: Search for asset by asset tag
+      const asset = await this.reportingService.findAssetByTag(this.config.assetTag);
+      
+      let assetId: number;
+      
+      if (!asset) {
+        // Step 2: Asset not found, create it first
+        this.logger.info(`Asset with tag ${this.config.assetTag} not found. Creating new asset...`);
+        const deviceInfo = await this.deviceInfoCollector.collect();
+        this.lastDeviceInfo = deviceInfo;
+        
+        assetId = await this.reportingService.createAsset(this.config.assetTag, deviceInfo);
+        this.logger.info(`Asset created with ID: ${assetId} for tag: ${this.config.assetTag}`);
+      } else {
+        assetId = asset.id;
+        this.logger.info(`Found existing asset with ID: ${assetId} for tag: ${this.config.assetTag}`);
+        
+        // If asset has a device linked, use it
+        if (asset.deviceId) {
+          this.logger.info(`Found existing device with ID: ${asset.deviceId} for asset tag: ${this.config.assetTag}`);
+          this.config.deviceId = asset.deviceId;
+          saveConfig({ deviceId: asset.deviceId });
+          return;
+        }
+      }
+
+      // Step 3: Register device (asset exists now, device will be linked to it)
+      this.logger.info(`Registering device for asset ID: ${assetId}...`);
       const deviceInfo = await this.deviceInfoCollector.collect();
       this.lastDeviceInfo = deviceInfo;
 
-      const deviceId = await this.reportingService.registerDevice(deviceInfo);
+      const deviceId = await this.reportingService.registerDevice(deviceInfo, this.config.assetTag);
       this.config.deviceId = deviceId;
       saveConfig({ deviceId });
 
-      this.logger.info(`Device registered with ID: ${deviceId}`);
+      this.logger.info(`Device registered with ID: ${deviceId} for asset tag: ${this.config.assetTag}`);
     } catch (error) {
-      this.logger.error('Device registration failed', { error });
+      this.logger.error('Device lookup/registration failed', { error });
       throw error;
     }
   }
@@ -154,15 +188,12 @@ export class AgentService {
       // Collect health metrics (these change frequently)
       const healthMetrics = await this.healthMetricsCollector.collect();
 
-      // Collect software list (only occasionally, not every report)
-      // For now, we'll collect it less frequently
       let softwareList: DeviceReport['softwareList'] = [];
-      const shouldCollectSoftware = Math.random() < 0.1; // 10% chance each report
-      if (shouldCollectSoftware) {
+
+      if (this.config.collectSoftware) {
         softwareList = await this.softwareCollector.collect();
       }
 
-      // Ensure we have device info
       if (!this.lastDeviceInfo) {
         this.lastDeviceInfo = await this.deviceInfoCollector.collect();
       }

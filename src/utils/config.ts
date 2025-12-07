@@ -31,6 +31,9 @@ export function loadConfig(): AgentConfig {
   if (process.env.NOVARIS_HOSTNAME) {
     envConfig.hostname = process.env.NOVARIS_HOSTNAME;
   }
+  if (process.env.NOVARIS_ASSET_TAG) {
+    envConfig.assetTag = process.env.NOVARIS_ASSET_TAG;
+  }
   if (process.env.NOVARIS_COLLECT_INTERVAL) {
     envConfig.collectInterval = parseInt(process.env.NOVARIS_COLLECT_INTERVAL, 10);
   }
@@ -51,11 +54,11 @@ export function loadConfig(): AgentConfig {
   }
 
   // Merge: defaults -> file config -> environment variables (env overrides file, file overrides defaults)
-  const config: AgentConfig = {
+  const config = {
     ...DEFAULT_CONFIG,
     ...fileConfig,
     ...envConfig,
-  };
+  } as AgentConfig;
 
   // Validate required fields
   if (!config.apiUrl) {
@@ -63,6 +66,9 @@ export function loadConfig(): AgentConfig {
   }
   if (!config.apiKey) {
     throw new Error('API Key is required. Set NOVARIS_API_KEY environment variable or config.json');
+  }
+  if (!config.assetTag) {
+    throw new Error('Asset Tag is required. Set NOVARIS_ASSET_TAG environment variable or config.json');
   }
 
   return config;
