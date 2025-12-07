@@ -9,43 +9,34 @@ export class SoftwareCollector {
     try {
       const softwareList: InstalledSoftware[] = [];
 
-      // Collect installed packages/applications
+      // Collect installed software using systeminformation
       try {
-        const packages = await si.getInstalledPackages();
+        const software = await si.software();
         
-        for (const pkg of packages) {
-          if (pkg.name) {
-            softwareList.push({
-              name: pkg.name,
-              version: pkg.version || null,
-              installedAt: pkg.installDate ? new Date(pkg.installDate) : null,
-            });
-          }
-        }
-      } catch (error) {
-        this.logger.warn('Failed to collect software list using getInstalledPackages', { error });
-        
-        // Fallback: try platform-specific methods
-        try {
-          const apps = await si.applications();
-          for (const app of apps) {
-            if (app.name) {
+        // The software() method returns an object with 'installed' array
+        if (software && software.installed && Array.isArray(software.installed)) {
+          for (const item of software.installed) {
+            if (item.name) {
               softwareList.push({
-                name: app.name,
-                version: app.version || null,
-                installedAt: null,
+                name: item.name,
+                version: item.version || null,
+                installedAt: item.installDate ? new Date(item.installDate) : null,
               });
             }
           }
-        } catch (fallbackError) {
-          this.logger.warn('Failed to collect software list using applications', { error: fallbackError });
         }
+      } catch (error: any) {
+        this.logger.warn('Failed to collect software list using software()', { 
+          error: error.message || error 
+        });
       }
 
       this.logger.debug(`Collected ${softwareList.length} software items`);
       return softwareList;
-    } catch (error) {
-      this.logger.error('Failed to collect software list', { error });
+    } catch (error: any) {
+      this.logger.error('Failed to collect software list', { 
+        error: error.message || error 
+      });
       return [];
     }
   }
