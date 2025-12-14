@@ -6,6 +6,7 @@ export interface DeviceInfo {
   osVersion: string;
   ipAddress: string | null;
   macAddress: string | null;
+  agentVersion: string;
 }
 
 export interface InstalledSoftware {

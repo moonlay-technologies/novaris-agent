@@ -1,5 +1,7 @@
 import * as os from 'os';
 import * as si from 'systeminformation';
+import * as fs from 'fs';
+import * as path from 'path';
 import { DeviceInfo } from '../types/device';
 import { getLogger } from '../utils/logger';
 
@@ -86,6 +88,16 @@ export class DeviceInfoCollector {
         this.logger.warn('Failed to collect MAC address', { error });
       }
 
+      // Get agent version from package.json
+      let agentVersion = 'unknown';
+      try {
+        const packageJsonPath = path.join(__dirname, '../../package.json');
+        const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+        agentVersion = packageJson.version || 'unknown';
+      } catch (error) {
+        this.logger.warn('Failed to collect agent version', { error });
+      }
+
       return {
         hostname,
         serialNumber,
@@ -94,6 +106,7 @@ export class DeviceInfoCollector {
         osVersion,
         ipAddress,
         macAddress,
+        agentVersion,
       };
     } catch (error) {
       this.logger.error('Failed to collect device info', { error });
