@@ -53,6 +53,26 @@ export function loadConfig(): AgentConfig {
   if (process.env.NOVARIS_PATCH_STATUS_INTERVAL) {
     envConfig.patchStatusInterval = parseInt(process.env.NOVARIS_PATCH_STATUS_INTERVAL, 10);
   }
+  if (process.env.NOVARIS_COLLECT_LOGS) {
+    const raw = process.env.NOVARIS_COLLECT_LOGS.trim().toLowerCase();
+    envConfig.collectLogs = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_LOGS_INTERVAL) {
+    envConfig.logsInterval = parseInt(process.env.NOVARIS_LOGS_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_LOGS_MAX_BATCH_SIZE) {
+    envConfig.logsMaxBatchSize = parseInt(process.env.NOVARIS_LOGS_MAX_BATCH_SIZE, 10);
+  }
+  if (process.env.NOVARIS_LOGS_MIN_SEVERITY) {
+    const raw = process.env.NOVARIS_LOGS_MIN_SEVERITY.trim().toLowerCase();
+    if (raw === 'info' || raw === 'warning' || raw === 'error' || raw === 'critical') {
+      envConfig.logsMinSeverity = raw as AgentConfig['logsMinSeverity'];
+    }
+  }
+  if (process.env.NOVARIS_LOGS_INCLUDE_RAW) {
+    const raw = process.env.NOVARIS_LOGS_INCLUDE_RAW.trim().toLowerCase();
+    envConfig.logsIncludeRaw = raw === '1' || raw === 'true' || raw === 'yes';
+  }
   if (process.env.NOVARIS_LOG_LEVEL) {
     envConfig.logLevel = process.env.NOVARIS_LOG_LEVEL as AgentConfig['logLevel'];
   }

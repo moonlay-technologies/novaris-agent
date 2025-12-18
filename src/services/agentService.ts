@@ -1,9 +1,10 @@
 import { AgentConfig } from '../types/config';
-import { DeviceReport, PatchStatusReport } from '../types/device';
+import { DeviceLogItem, DeviceReport, PatchStatusReport } from '../types/device';
 import { DeviceInfoCollector } from '../collectors/deviceInfoCollector';
 import { SoftwareCollector } from '../collectors/softwareCollector';
 import { HealthMetricsCollector } from '../collectors/healthMetricsCollector';
 import { PatchStatusCollector } from '../collectors/patchStatusCollector';
+import { LogCollector } from '../collectors/logCollector';
 import { ReportingService } from './reportingService';
 import { getLogger } from '../utils/logger';
 import { saveConfig } from '../utils/config';
@@ -13,20 +14,24 @@ export class AgentService {
   private softwareCollector: SoftwareCollector;
   private healthMetricsCollector: HealthMetricsCollector;
   private patchStatusCollector: PatchStatusCollector;
+  private logCollector: LogCollector;
   private reportingService: ReportingService;
   private logger = getLogger();
   private collectInterval: NodeJS.Timeout | null = null;
   private reportInterval: NodeJS.Timeout | null = null;
   private patchStatusInterval: NodeJS.Timeout | null = null;
+  private logsInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private lastDeviceInfo: DeviceReport['deviceInfo'] | null = null;
   private lastPatchStatusAt: Date | null = null;
+  private lastLogsCursorAt: Date | null = null;
 
   constructor(private config: AgentConfig) {
     this.deviceInfoCollector = new DeviceInfoCollector();
     this.softwareCollector = new SoftwareCollector();
     this.healthMetricsCollector = new HealthMetricsCollector();
     this.patchStatusCollector = new PatchStatusCollector();
+    this.logCollector = new LogCollector();
     this.reportingService = new ReportingService(config);
   }
 
@@ -54,6 +59,7 @@ export class AgentService {
       this.startCollection();
       this.startReporting();
       this.startPatchStatusReporting();
+      this.startLogsReporting();
 
       this.logger.info('Novaris Agent started successfully');
     } catch (error) {
@@ -84,6 +90,11 @@ export class AgentService {
     if (this.patchStatusInterval) {
       clearInterval(this.patchStatusInterval);
       this.patchStatusInterval = null;
+    }
+
+    if (this.logsInterval) {
+      clearInterval(this.logsInterval);
+      this.logsInterval = null;
     }
 
     // Process any remaining queued reports
@@ -191,6 +202,35 @@ export class AgentService {
     }, this.config.patchStatusInterval * 1000);
   }
 
+  private startLogsReporting(): void {
+    if (!this.config.collectLogs) {
+      this.logger.info('Log collection disabled (collectLogs=false)');
+      return;
+    }
+
+    this.logger.info(`Starting log reporting (interval: ${this.config.logsInterval}s)`);
+
+    // restore cursor from config if available
+    if (this.config.logsCursor?.last_collected_at) {
+      const parsed = new Date(this.config.logsCursor.last_collected_at);
+      if (!Number.isNaN(parsed.getTime())) {
+        this.lastLogsCursorAt = parsed;
+      }
+    }
+
+    // Collect immediately
+    this.reportLogs().catch((error) => {
+      this.logger.error('Initial log report failed', { error });
+    });
+
+    // Then collect at intervals
+    this.logsInterval = setInterval(() => {
+      this.reportLogs().catch((error) => {
+        this.logger.error('Log report failed', { error });
+      });
+    }, this.config.logsInterval * 1000);
+  }
+
   private async collectData(): Promise<void> {
     try {
       this.logger.debug('Collecting device data...');
@@ -266,6 +306,51 @@ export class AgentService {
       this.logger.error('Failed to report patch status', { error });
       throw error;
     }
+  }
+
+  private async reportLogs(): Promise<void> {
+    if (!this.config.deviceId) {
+      this.logger.warn('Device not registered yet, skipping log report');
+      return;
+    }
+
+    try {
+      const since = this.lastLogsCursorAt ? new Date(this.lastLogsCursorAt.getTime() - 5000) : undefined; // small overlap
+
+      const { logs, cursor } = await this.logCollector.collect({
+        since,
+        maxItems: this.config.logsMaxBatchSize,
+        minSeverity: this.config.logsMinSeverity,
+        includeRaw: this.config.logsIncludeRaw,
+      });
+
+      // De-dup within batch (overlap)
+      const deduped = this.dedupeLogs(logs);
+
+      if (deduped.length > 0) {
+        await this.reportingService.reportDeviceLogs(this.config.deviceId, deduped);
+      }
+
+      this.lastLogsCursorAt = cursor;
+      // persist cursor so restarts don't resend from scratch
+      this.config.logsCursor = { last_collected_at: cursor.toISOString() };
+      saveConfig({ logsCursor: this.config.logsCursor });
+    } catch (error) {
+      this.logger.error('Failed to report logs', { error });
+      throw error;
+    }
+  }
+
+  private dedupeLogs(logs: DeviceLogItem[]): DeviceLogItem[] {
+    const seen = new Set<string>();
+    const out: DeviceLogItem[] = [];
+    for (const l of logs) {
+      const key = `${l.source}|${l.severity}|${l.collectedAt.toISOString()}|${l.message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(l);
+    }
+    return out;
   }
 
   async collectFullReport(): Promise<DeviceReport> {

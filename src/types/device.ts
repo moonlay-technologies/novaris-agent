@@ -31,6 +31,16 @@ export interface PatchStatusReport {
   details: string | null;
 }
 
+export type DeviceLogSeverity = 'info' | 'warning' | 'error' | 'critical';
+
+export interface DeviceLogItem {
+  severity: DeviceLogSeverity;
+  source: string;
+  message: string;
+  raw: string | null;
+  collectedAt: Date;
+}
+
 export interface DeviceReport {
   deviceInfo: DeviceInfo;
   healthMetrics: HealthMetrics;

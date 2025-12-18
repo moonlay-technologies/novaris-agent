@@ -11,6 +11,14 @@ export interface AgentConfig {
   collectSoftware: boolean;
   collectPatchStatus: boolean;
   patchStatusInterval: number; // in seconds
+  collectLogs: boolean;
+  logsInterval: number; // in seconds
+  logsMaxBatchSize: number;
+  logsMinSeverity: 'info' | 'warning' | 'error' | 'critical';
+  logsIncludeRaw: boolean;
+  logsCursor?: {
+    last_collected_at?: string;
+  };
   logLevel: 'error' | 'warn' | 'info' | 'debug';
   logFile?: string;
 }
@@ -25,6 +33,11 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   collectSoftware: false,
   collectPatchStatus: true,
   patchStatusInterval: 21600, // 6 hours
+  collectLogs: true,
+  logsInterval: 300, // 5 minutes
+  logsMaxBatchSize: 200,
+  logsMinSeverity: 'warning',
+  logsIncludeRaw: false,
   logLevel: 'info',
 };
 

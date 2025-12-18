@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { DeviceReport, PatchStatusReport } from '../types/device';
+import { DeviceLogItem, DeviceReport, PatchStatusReport } from '../types/device';
 import { AgentConfig } from '../types/config';
 import { getLogger } from '../utils/logger';
 
@@ -8,6 +8,7 @@ export class ReportingService {
   private logger = getLogger();
   private reportQueue: DeviceReport[] = [];
   private patchStatusQueue: PatchStatusReport[] = [];
+  private logsQueue: DeviceLogItem[][] = [];
   private isOnline: boolean = true;
 
   constructor(private config: AgentConfig) {
@@ -315,6 +316,65 @@ export class ReportingService {
     }
   }
 
+  async reportDeviceLogs(deviceId: number, logs: DeviceLogItem[]): Promise<void> {
+    if (!logs.length) return;
+
+    if (!this.isOnline) {
+      this.logger.warn('Device is offline, queuing device logs');
+      this.logsQueue.push(logs);
+      return;
+    }
+
+    const maxRetries = this.config.retryAttempts;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        this.logger.debug(`Reporting device logs (attempt ${attempt + 1}/${maxRetries})...`);
+
+        const payload = {
+          logs: logs.map((l) => ({
+            severity: l.severity,
+            source: l.source,
+            message: l.message,
+            raw: l.raw ?? undefined,
+            collected_at: l.collectedAt.toISOString(),
+          })),
+        };
+
+        await this.apiClient.post(`/devices/${deviceId}/logs`, payload);
+        this.logger.debug('Device logs sent successfully');
+        return;
+      } catch (error: any) {
+        lastError = error;
+        const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
+
+        if (isNetworkError) {
+          this.isOnline = false;
+          this.logger.warn(`Network error during device logs report (attempt ${attempt + 1}/${maxRetries})`);
+          this.logsQueue.push(logs);
+          return;
+        } else {
+          this.logger.error(`Device logs report failed (attempt ${attempt + 1}/${maxRetries})`, {
+            status: error.response?.status,
+            message: error.response?.data?.error || error.message,
+          });
+        }
+
+        if (attempt < maxRetries - 1) {
+          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    this.logger.warn('Failed to send device logs after all retries, queuing for later');
+    this.logsQueue.push(logs);
+    if (lastError) {
+      this.logger.debug('Last device logs error', { error: lastError.message });
+    }
+  }
+
   private async syncSoftwareList(deviceId: number, softwareList: DeviceReport['softwareList']): Promise<void> {
     for (const software of softwareList) {
       try {
@@ -331,12 +391,16 @@ export class ReportingService {
   }
 
   async processQueue(): Promise<void> {
-    if ((!this.reportQueue.length && !this.patchStatusQueue.length) || !this.isOnline || !this.config.deviceId) {
+    if (
+      (!this.reportQueue.length && !this.patchStatusQueue.length && !this.logsQueue.length) ||
+      !this.isOnline ||
+      !this.config.deviceId
+    ) {
       return;
     }
 
     this.logger.info(
-      `Processing queued reports... health=${this.reportQueue.length}, patch_status=${this.patchStatusQueue.length}`
+      `Processing queued reports... health=${this.reportQueue.length}, patch_status=${this.patchStatusQueue.length}, logs=${this.logsQueue.length}`
     );
 
     const reports = [...this.reportQueue];
@@ -360,6 +424,17 @@ export class ReportingService {
       } catch (error) {
         this.logger.error('Failed to process queued patch status', { error });
         this.patchStatusQueue.push(status);
+      }
+    }
+
+    const logBatches = [...this.logsQueue];
+    this.logsQueue = [];
+    for (const batch of logBatches) {
+      try {
+        await this.reportDeviceLogs(this.config.deviceId!, batch);
+      } catch (error) {
+        this.logger.error('Failed to process queued device logs', { error });
+        this.logsQueue.push(batch);
       }
     }
   }
