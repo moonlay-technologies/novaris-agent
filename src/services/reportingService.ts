@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { DeviceReport } from '../types/device';
+import { DeviceReport, PatchStatusReport } from '../types/device';
 import { AgentConfig } from '../types/config';
 import { getLogger } from '../utils/logger';
 
@@ -7,6 +7,7 @@ export class ReportingService {
   private apiClient: AxiosInstance;
   private logger = getLogger();
   private reportQueue: DeviceReport[] = [];
+  private patchStatusQueue: PatchStatusReport[] = [];
   private isOnline: boolean = true;
 
   constructor(private config: AgentConfig) {
@@ -259,6 +260,61 @@ export class ReportingService {
     this.reportQueue.push(report);
   }
 
+  async reportPatchStatus(deviceId: number, status: PatchStatusReport): Promise<void> {
+    if (!this.isOnline) {
+      this.logger.warn('Device is offline, queuing patch status');
+      this.patchStatusQueue.push(status);
+      return;
+    }
+
+    const maxRetries = this.config.retryAttempts;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        this.logger.debug(`Reporting patch status (attempt ${attempt + 1}/${maxRetries})...`);
+
+        const payload = {
+          os: status.os,
+          missing_critical: status.missingCritical,
+          pending_updates: status.pendingUpdates,
+          last_checked_at: status.lastCheckedAt.toISOString(),
+          details: status.details ?? undefined,
+        };
+
+        await this.apiClient.post(`/devices/${deviceId}/patch-status`, payload);
+        this.logger.debug('Patch status report sent successfully');
+        return;
+      } catch (error: any) {
+        lastError = error;
+        const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
+
+        if (isNetworkError) {
+          this.isOnline = false;
+          this.logger.warn(`Network error during patch status report (attempt ${attempt + 1}/${maxRetries})`);
+          this.patchStatusQueue.push(status);
+          return;
+        } else {
+          this.logger.error(`Patch status report failed (attempt ${attempt + 1}/${maxRetries})`, {
+            status: error.response?.status,
+            message: error.response?.data?.error || error.message,
+          });
+        }
+
+        if (attempt < maxRetries - 1) {
+          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    this.logger.warn('Failed to send patch status after all retries, queuing for later');
+    this.patchStatusQueue.push(status);
+    if (lastError) {
+      this.logger.debug('Last patch status error', { error: lastError.message });
+    }
+  }
+
   private async syncSoftwareList(deviceId: number, softwareList: DeviceReport['softwareList']): Promise<void> {
     for (const software of softwareList) {
       try {
@@ -275,11 +331,14 @@ export class ReportingService {
   }
 
   async processQueue(): Promise<void> {
-    if (this.reportQueue.length === 0 || !this.isOnline || !this.config.deviceId) {
+    if ((!this.reportQueue.length && !this.patchStatusQueue.length) || !this.isOnline || !this.config.deviceId) {
       return;
     }
 
-    this.logger.info(`Processing ${this.reportQueue.length} queued reports...`);
+    this.logger.info(
+      `Processing queued reports... health=${this.reportQueue.length}, patch_status=${this.patchStatusQueue.length}`
+    );
+
     const reports = [...this.reportQueue];
     this.reportQueue = [];
 
@@ -290,6 +349,17 @@ export class ReportingService {
         this.logger.error('Failed to process queued report', { error });
         // Re-queue if it fails
         this.reportQueue.push(report);
+      }
+    }
+
+    const patchStatuses = [...this.patchStatusQueue];
+    this.patchStatusQueue = [];
+    for (const status of patchStatuses) {
+      try {
+        await this.reportPatchStatus(this.config.deviceId!, status);
+      } catch (error) {
+        this.logger.error('Failed to process queued patch status', { error });
+        this.patchStatusQueue.push(status);
       }
     }
   }

@@ -9,6 +9,8 @@ export interface AgentConfig {
   retryAttempts: number;
   retryDelay: number; // in milliseconds
   collectSoftware: boolean;
+  collectPatchStatus: boolean;
+  patchStatusInterval: number; // in seconds
   logLevel: 'error' | 'warn' | 'info' | 'debug';
   logFile?: string;
 }
@@ -21,6 +23,8 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   retryAttempts: 3,
   retryDelay: 1000, // 1 second
   collectSoftware: false,
+  collectPatchStatus: true,
+  patchStatusInterval: 21600, // 6 hours
   logLevel: 'info',
 };
 

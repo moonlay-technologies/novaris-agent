@@ -46,6 +46,13 @@ export function loadConfig(): AgentConfig {
   if (process.env.NOVARIS_RETRY_DELAY) {
     envConfig.retryDelay = parseInt(process.env.NOVARIS_RETRY_DELAY, 10);
   }
+  if (process.env.NOVARIS_COLLECT_PATCH_STATUS) {
+    const raw = process.env.NOVARIS_COLLECT_PATCH_STATUS.trim().toLowerCase();
+    envConfig.collectPatchStatus = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_PATCH_STATUS_INTERVAL) {
+    envConfig.patchStatusInterval = parseInt(process.env.NOVARIS_PATCH_STATUS_INTERVAL, 10);
+  }
   if (process.env.NOVARIS_LOG_LEVEL) {
     envConfig.logLevel = process.env.NOVARIS_LOG_LEVEL as AgentConfig['logLevel'];
   }

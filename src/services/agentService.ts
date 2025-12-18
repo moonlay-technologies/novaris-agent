@@ -1,8 +1,9 @@
 import { AgentConfig } from '../types/config';
-import { DeviceReport } from '../types/device';
+import { DeviceReport, PatchStatusReport } from '../types/device';
 import { DeviceInfoCollector } from '../collectors/deviceInfoCollector';
 import { SoftwareCollector } from '../collectors/softwareCollector';
 import { HealthMetricsCollector } from '../collectors/healthMetricsCollector';
+import { PatchStatusCollector } from '../collectors/patchStatusCollector';
 import { ReportingService } from './reportingService';
 import { getLogger } from '../utils/logger';
 import { saveConfig } from '../utils/config';
@@ -11,17 +12,21 @@ export class AgentService {
   private deviceInfoCollector: DeviceInfoCollector;
   private softwareCollector: SoftwareCollector;
   private healthMetricsCollector: HealthMetricsCollector;
+  private patchStatusCollector: PatchStatusCollector;
   private reportingService: ReportingService;
   private logger = getLogger();
   private collectInterval: NodeJS.Timeout | null = null;
   private reportInterval: NodeJS.Timeout | null = null;
+  private patchStatusInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private lastDeviceInfo: DeviceReport['deviceInfo'] | null = null;
+  private lastPatchStatusAt: Date | null = null;
 
   constructor(private config: AgentConfig) {
     this.deviceInfoCollector = new DeviceInfoCollector();
     this.softwareCollector = new SoftwareCollector();
     this.healthMetricsCollector = new HealthMetricsCollector();
+    this.patchStatusCollector = new PatchStatusCollector();
     this.reportingService = new ReportingService(config);
   }
 
@@ -48,6 +53,7 @@ export class AgentService {
       // Start collecting and reporting
       this.startCollection();
       this.startReporting();
+      this.startPatchStatusReporting();
 
       this.logger.info('Novaris Agent started successfully');
     } catch (error) {
@@ -73,6 +79,11 @@ export class AgentService {
     if (this.reportInterval) {
       clearInterval(this.reportInterval);
       this.reportInterval = null;
+    }
+
+    if (this.patchStatusInterval) {
+      clearInterval(this.patchStatusInterval);
+      this.patchStatusInterval = null;
     }
 
     // Process any remaining queued reports
@@ -159,6 +170,27 @@ export class AgentService {
     }, this.config.reportInterval * 1000);
   }
 
+  private startPatchStatusReporting(): void {
+    if (!this.config.collectPatchStatus) {
+      this.logger.info('Patch status collection disabled (collectPatchStatus=false)');
+      return;
+    }
+
+    this.logger.info(`Starting patch status reporting (interval: ${this.config.patchStatusInterval}s)`);
+
+    // Report immediately
+    this.reportPatchStatus().catch((error) => {
+      this.logger.error('Initial patch status report failed', { error });
+    });
+
+    // Then report at intervals
+    this.patchStatusInterval = setInterval(() => {
+      this.reportPatchStatus().catch((error) => {
+        this.logger.error('Patch status report failed', { error });
+      });
+    }, this.config.patchStatusInterval * 1000);
+  }
+
   private async collectData(): Promise<void> {
     try {
       this.logger.debug('Collecting device data...');
@@ -207,6 +239,31 @@ export class AgentService {
       await this.reportingService.reportHealth(this.config.deviceId, report);
     } catch (error) {
       this.logger.error('Failed to report data', { error });
+      throw error;
+    }
+  }
+
+  private async reportPatchStatus(): Promise<void> {
+    if (!this.config.deviceId) {
+      this.logger.warn('Device not registered yet, skipping patch status report');
+      return;
+    }
+
+    try {
+      // Avoid frequent repeats if interval misconfigured too low
+      if (this.lastPatchStatusAt) {
+        const minGapSeconds = Math.min(this.config.patchStatusInterval, 300);
+        const secondsSinceLast = (Date.now() - this.lastPatchStatusAt.getTime()) / 1000;
+        if (secondsSinceLast < minGapSeconds) {
+          return;
+        }
+      }
+
+      const status: PatchStatusReport = await this.patchStatusCollector.collect();
+      await this.reportingService.reportPatchStatus(this.config.deviceId, status);
+      this.lastPatchStatusAt = new Date();
+    } catch (error) {
+      this.logger.error('Failed to report patch status', { error });
       throw error;
     }
   }

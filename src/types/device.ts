@@ -23,6 +23,14 @@ export interface HealthMetrics {
   collectedAt: Date;
 }
 
+export interface PatchStatusReport {
+  os: string;
+  missingCritical: boolean;
+  pendingUpdates: number;
+  lastCheckedAt: Date;
+  details: string | null;
+}
+
 export interface DeviceReport {
   deviceInfo: DeviceInfo;
   healthMetrics: HealthMetrics;
