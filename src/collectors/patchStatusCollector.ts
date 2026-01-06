@@ -75,27 +75,27 @@ export class PatchStatusCollector {
   }> {
     // Uses Windows Update COM API (no external modules required)
     // Best-effort: detects pending software updates and flags security/critical category presence.
-    const ps = [
-      '$ErrorActionPreference = "Stop"',
-      '$session = New-Object -ComObject Microsoft.Update.Session',
-      '$searcher = $session.CreateUpdateSearcher()',
-      '$result = $searcher.Search("IsInstalled=0 and IsHidden=0 and Type=\\"Software\\"")',
-      '$updates = $result.Updates',
-      '$pending = $updates.Count',
-      '$criticalCount = 0',
-      '$titles = @()',
-      'for ($i = 0; $i -lt $updates.Count; $i++) {',
-      '  $u = $updates.Item($i)',
-      '  if ($titles.Count -lt 5) { $titles += $u.Title }',
-      '  $catNames = @()',
-      '  foreach ($c in $u.Categories) { $catNames += $c.Name }',
-      '  if ($catNames -contains "Security Updates" -or $catNames -contains "Critical Updates") { $criticalCount++ }',
-      '}',
-      '$obj = [pscustomobject]@{ pending_updates = $pending; missing_critical = ($criticalCount -gt 0); critical_count = $criticalCount; sample_titles = $titles }',
-      '$obj | ConvertTo-Json -Compress',
-    ].join('; ');
+    const psScript = `
+      $ErrorActionPreference = "Stop"
+      $session = New-Object -ComObject Microsoft.Update.Session
+      $searcher = $session.CreateUpdateSearcher()
+      $result = $searcher.Search("IsInstalled=0 and IsHidden=0")
+      $updates = $result.Updates
+      $pending = $updates.Count
+      $criticalCount = 0
+      $titles = @()
+      for ($i = 0; $i -lt $updates.Count; $i++) {
+        $u = $updates.Item($i)
+        if ($titles.Count -lt 5) { $titles += $u.Title }
+        $catNames = @()
+        foreach ($c in $u.Categories) { $catNames += $c.Name }
+        if ($catNames -contains "Security Updates" -or $catNames -contains "Critical Updates") { $criticalCount++ }
+      }
+      $obj = [pscustomobject]@{ pending_updates = $pending; missing_critical = ($criticalCount -gt 0); critical_count = $criticalCount; sample_titles = $titles }
+      $obj | ConvertTo-Json -Compress
+    `.trim();
 
-    const command = `powershell -NoProfile -Command "${ps.replace(/"/g, '\\"')}"`;
+    const command = `powershell -NoProfile -Command "${psScript.replace(/"/g, '\\"')}"`;
 
     try {
       const { stdout } = await execAsync(command, { timeout: 60000, maxBuffer: 2 * 1024 * 1024 });
@@ -121,11 +121,28 @@ export class PatchStatusCollector {
         details,
       };
     } catch (error: any) {
-      this.logger.warn('Windows patch status collection failed', { error: error?.message || error });
+      const errorMessage = error?.message || String(error);
+
+      // Check for specific Windows Update service errors
+      let details = 'Windows patch status collection failed (best-effort).';
+      if (errorMessage.includes('0x80240032')) {
+        details = 'Windows Update service error (0x80240032). This may indicate network issues or Windows Update service problems. Try running Windows Update manually.';
+      } else if (errorMessage.includes('HRESULT')) {
+        details = 'Windows Update COM API error. The Windows Update service may not be available or properly configured.';
+      } else if (errorMessage.includes('Microsoft.Update.Session')) {
+        details = 'Failed to create Windows Update session. Windows Update components may be corrupted or disabled.';
+      }
+
+      this.logger.warn('Windows patch status collection failed', {
+        error: errorMessage,
+        details,
+        command: command.substring(0, 200) + '...' // Log truncated command for debugging
+      });
+
       return {
         pendingUpdates: 0,
         missingCritical: false,
-        details: 'Windows patch status collection failed (best-effort).',
+        details,
       };
     }
   }
