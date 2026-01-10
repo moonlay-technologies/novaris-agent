@@ -5,6 +5,7 @@ import { SoftwareCollector } from '../collectors/softwareCollector';
 import { HealthMetricsCollector } from '../collectors/healthMetricsCollector';
 import { PatchStatusCollector } from '../collectors/patchStatusCollector';
 import { LogCollector } from '../collectors/logCollector';
+import { ProcessCollector } from '../collectors/processCollector';
 import { ReportingService } from './reportingService';
 import { getLogger } from '../utils/logger';
 import { saveConfig } from '../utils/config';
@@ -15,16 +16,20 @@ export class AgentService {
   private healthMetricsCollector: HealthMetricsCollector;
   private patchStatusCollector: PatchStatusCollector;
   private logCollector: LogCollector;
+  private processCollector: ProcessCollector;
   private reportingService: ReportingService;
   private logger = getLogger();
   private collectInterval: NodeJS.Timeout | null = null;
   private reportInterval: NodeJS.Timeout | null = null;
   private patchStatusInterval: NodeJS.Timeout | null = null;
   private logsInterval: NodeJS.Timeout | null = null;
+  private processInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private lastDeviceInfo: DeviceReport['deviceInfo'] | null = null;
   private lastPatchStatusAt: Date | null = null;
   private lastLogsCursorAt: Date | null = null;
+  private softwareCollectionIteration: number = 0;
+  private lastSoftwareList: DeviceReport['softwareList'] | undefined = undefined;
 
   constructor(private config: AgentConfig) {
     this.deviceInfoCollector = new DeviceInfoCollector();
@@ -32,6 +37,7 @@ export class AgentService {
     this.healthMetricsCollector = new HealthMetricsCollector();
     this.patchStatusCollector = new PatchStatusCollector();
     this.logCollector = new LogCollector();
+    this.processCollector = new ProcessCollector();
     this.reportingService = new ReportingService(config);
   }
 
@@ -60,6 +66,7 @@ export class AgentService {
       this.startReporting();
       this.startPatchStatusReporting();
       this.startLogsReporting();
+      this.startProcessReporting();
 
       this.logger.info('Novaris Agent started successfully');
     } catch (error) {
@@ -95,6 +102,11 @@ export class AgentService {
     if (this.logsInterval) {
       clearInterval(this.logsInterval);
       this.logsInterval = null;
+    }
+
+    if (this.processInterval) {
+      clearInterval(this.processInterval);
+      this.processInterval = null;
     }
 
     // Process any remaining queued reports
@@ -231,6 +243,27 @@ export class AgentService {
     }, this.config.logsInterval * 1000);
   }
 
+  private startProcessReporting(): void {
+    if (!this.config.collectProcesses) {
+      this.logger.info('Process collection disabled (collectProcesses=false)');
+      return;
+    }
+
+    this.logger.info(`Starting process reporting (interval: ${this.config.processInterval}s)`);
+
+    // Report immediately
+    this.reportProcesses().catch((error) => {
+      this.logger.error('Initial process report failed', { error });
+    });
+
+    // Then report at intervals
+    this.processInterval = setInterval(() => {
+      this.reportProcesses().catch((error) => {
+        this.logger.error('Process report failed', { error });
+      });
+    }, this.config.processInterval * 1000);
+  }
+
   private async collectData(): Promise<void> {
     try {
       this.logger.debug('Collecting device data...');
@@ -260,10 +293,24 @@ export class AgentService {
       // Collect health metrics (these change frequently)
       const healthMetrics = await this.healthMetricsCollector.collect();
 
-      let softwareList: DeviceReport['softwareList'] = [];
+      let softwareList: DeviceReport['softwareList'] | undefined = this.lastSoftwareList;
 
-      if (this.config.collectSoftware) {
+      // Increment software collection iteration counter
+      this.softwareCollectionIteration++;
+
+      // Collect software on first iteration or every N iterations to reduce frequency (configurable)
+      const shouldCollectSoftware = this.config.collectSoftware && (
+        this.softwareCollectionIteration === 1 || // First collection
+        this.softwareCollectionIteration % this.config.softwareCollectionInterval === 0
+      );
+
+      if (shouldCollectSoftware) {
+        this.logger.info(`Collecting software data (iteration: ${this.softwareCollectionIteration})`);
         softwareList = await this.softwareCollector.collect();
+        this.lastSoftwareList = softwareList; // Cache the collected software list
+      } else if (this.config.collectSoftware && this.lastSoftwareList !== undefined) {
+        const nextCollection = Math.ceil(this.softwareCollectionIteration / this.config.softwareCollectionInterval) * this.config.softwareCollectionInterval;
+        this.logger.debug(`Using cached software data (iteration: ${this.softwareCollectionIteration}, ${softwareList?.length || 0} items, next collection at iteration ${nextCollection})`);
       }
 
       if (!this.lastDeviceInfo) {
@@ -277,8 +324,13 @@ export class AgentService {
       };
 
       await this.reportingService.reportHealth(this.config.deviceId, report);
-    } catch (error) {
-      this.logger.error('Failed to report data', { error });
+    } catch (error: any) {
+      this.logger.error('Failed to report data', {
+        status: error.response?.status,
+        message: error.response?.data?.error || error.message,
+        response: error.response?.data,
+        error
+      });
       throw error;
     }
   }
@@ -302,8 +354,13 @@ export class AgentService {
       const status: PatchStatusReport = await this.patchStatusCollector.collect();
       await this.reportingService.reportPatchStatus(this.config.deviceId, status);
       this.lastPatchStatusAt = new Date();
-    } catch (error) {
-      this.logger.error('Failed to report patch status', { error });
+    } catch (error: any) {
+      this.logger.error('Failed to report patch status', {
+        status: error.response?.status,
+        message: error.response?.data?.error || error.message,
+        response: error.response?.data,
+        error
+      });
       throw error;
     }
   }
@@ -335,8 +392,37 @@ export class AgentService {
       // persist cursor so restarts don't resend from scratch
       this.config.logsCursor = { last_collected_at: cursor.toISOString() };
       saveConfig({ logsCursor: this.config.logsCursor });
-    } catch (error) {
-      this.logger.error('Failed to report logs', { error });
+    } catch (error: any) {
+      console.log(error);
+      this.logger.error('Failed to report logs', {
+        status: error.response?.status,
+        message: error.response?.data?.error || error.message || error.toString(),
+        response: error.response?.data,
+        error
+      });
+      throw error;
+    }
+  }
+
+  private async reportProcesses(): Promise<void> {
+    if (!this.config.deviceId) {
+      this.logger.warn('Device not registered yet, skipping process report');
+      return;
+    }
+
+    try {
+      const processes = await this.processCollector.collect();
+      
+      if (processes.length > 0) {
+        await this.reportingService.reportProcesses(this.config.deviceId, processes);
+      }
+    } catch (error: any) {
+      this.logger.error('Failed to report processes', {
+        status: error.response?.status,
+        message: error.response?.data?.error || error.message,
+        response: error.response?.data,
+        error
+      });
       throw error;
     }
   }
@@ -345,7 +431,9 @@ export class AgentService {
     const seen = new Set<string>();
     const out: DeviceLogItem[] = [];
     for (const l of logs) {
-      const key = `${l.source}|${l.severity}|${l.collectedAt.toISOString()}|${l.message}`;
+      // Ensure date is valid before using toISOString
+      const dateStr = !isNaN(l.collectedAt.getTime()) ? l.collectedAt.toISOString() : new Date().toISOString();
+      const key = `${l.source}|${l.severity}|${dateStr}|${l.message}`;
       if (seen.has(key)) continue;
       seen.add(key);
       out.push(l);

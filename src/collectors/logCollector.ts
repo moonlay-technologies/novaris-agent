@@ -117,14 +117,16 @@ export class LogCollector {
         .map((e: any) => {
           const sev = mapWindowsLevel(e?.LevelDisplayName);
           const collectedAt = e?.TimeCreated ? new Date(e.TimeCreated) : new Date();
+          // Ensure the date is valid
+          const validDate = !isNaN(collectedAt.getTime()) ? collectedAt : new Date();
           const provider = e?.ProviderName || 'unknown';
           const logName = e?.LogName || 'eventlog';
-          const source = `windows:eventlog:${logName}:${provider}`;
+          const source = `windows:eventlog:${logName}:${provider}`.substring(0, 100);
           const message = redactSecrets(String(e?.Message || '')).trim();
           const rawPayload = params.includeRaw ? truncate(redactSecrets(JSON.stringify(e))) : null;
-          return { severity: sev, source, message, raw: rawPayload, collectedAt };
+          return { severity: sev, source, message, raw: rawPayload, collectedAt: validDate };
         })
-        .filter((l) => l.message.length > 0)
+        .filter((l) => l.message && l.message.length > 0)
         .filter((l) => severityRank(l.severity) >= minRank);
 
       // cursor: newest collectedAt (or now)
@@ -187,18 +189,20 @@ export class LogCollector {
           if (!msg) continue;
 
           const unit = e?._SYSTEMD_UNIT || e?.SYSLOG_IDENTIFIER || e?._COMM || 'journald';
-          const source = `linux:journald:${unit}`;
+          const source = `linux:journald:${unit}`.substring(0, 100);
 
           // __REALTIME_TIMESTAMP is microseconds since epoch (string)
           const tsMicros = Number(e?.__REALTIME_TIMESTAMP);
           const collectedAt = Number.isFinite(tsMicros) ? new Date(tsMicros / 1000) : new Date();
+          // Ensure the date is valid
+          const validDate = !isNaN(collectedAt.getTime()) ? collectedAt : new Date();
 
           logs.push({
             severity: sev,
             source,
             message: redactSecrets(msg),
             raw: params.includeRaw ? truncate(redactSecrets(line)) : null,
-            collectedAt,
+            collectedAt: validDate,
           });
         } catch {
           // ignore line parse errors
@@ -248,7 +252,7 @@ export class LogCollector {
 
           return {
             severity: sev,
-            source: `linux:syslog:${file}`,
+            source: `linux:syslog:${file}`.substring(0, 100),
             message: msg,
             raw: params.includeRaw ? truncate(msg) : null,
             collectedAt: new Date(),

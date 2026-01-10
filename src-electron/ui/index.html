@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Novaris Agent</title>
+    <link rel="icon" type="image/png" href="../assets/favicon.png">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a5a4d;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            min-width: 400px;
+            max-width: 500px;
+        }
+
+        .logo {
+            max-width: 200px;
+            height: auto;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 28px;
+            color: #667eea;
+            margin-bottom: 30px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 30px;
+            transition: all 0.3s ease;
+        }
+
+        .status.running {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status.stopped {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .status.loading {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .device-info {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .device-info strong {
+            color: #333;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 14px 20px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn.primary {
+            background-color: #1a5a4d;
+            color: white;
+        }
+
+        .btn.primary:hover:not(:disabled) {
+            background-color: #218838;
+        }
+
+        .btn.danger {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .btn.danger:hover:not(:disabled) {
+            background-color: #c82333;
+        }
+
+        .links {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+        }
+
+        .links a {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: color 0.2s;
+        }
+
+        .links a:hover {
+            color: #764ba2;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid currentColor;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .version {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <img src="../assets/novaris_logo.png" alt="Novaris Logo" class="logo">
+        <h1>Agent</h1>
+        
+        <div id="status" class="status loading">
+            ● Loading...
+        </div>
+        
+        <div id="device-info" class="device-info">
+            <div id="hostname">Loading device info...</div>
+        </div>
+        
+        <div class="controls">
+            <button id="start-btn" class="btn primary" disabled>
+                <span id="start-spinner" class="loading-spinner" style="display: none;"></span>
+                Start Agent
+            </button>
+            <button id="stop-btn" class="btn danger" disabled>
+                <span id="stop-spinner" class="loading-spinner" style="display: none;"></span>
+                Stop Agent
+            </button>
+        </div>
+        
+        <div class="links">
+            <a href="#" id="open-config">Edit Config</a>
+            <a href="#" id="open-logs">View Logs</a>
+        </div>
+
+        <div class="version">Novaris Agent v0.0.1</div>
+    </div>
+
+    <script>
+        // Check if electronAPI is available
+        if (!window.electronAPI) {
+            document.body.innerHTML = '<div class="container"><h1>Error</h1><p>Electron API not available</p></div>';
+            throw new Error('electronAPI not available');
+        }
+
+        const api = window.electronAPI;
+        
+        // DOM elements
+        const statusEl = document.getElementById('status');
+        const hostnameEl = document.getElementById('hostname');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const startSpinner = document.getElementById('start-spinner');
+        const stopSpinner = document.getElementById('stop-spinner');
+        const openConfigLink = document.getElementById('open-config');
+        const openLogsLink = document.getElementById('open-logs');
+
+        // Initialize
+        async function init() {
+            console.log('Initializing Novaris Agent GUI...');
+            
+            // Get initial status
+            await updateStatus();
+            
+            // Setup event listeners
+            startBtn.addEventListener('click', handleStart);
+            stopBtn.addEventListener('click', handleStop);
+            openConfigLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                api.openConfig();
+            });
+            openLogsLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                api.openLogs();
+            });
+
+            // Listen for status changes
+            api.onAgentStatusChanged((event, data) => {
+                console.log('Status changed:', data);
+                updateStatusDisplay(data.running);
+            });
+
+            // Get device info
+            try {
+                const sysInfo = await api.getSystemInfo();
+                if (sysInfo && sysInfo.deviceInfo) {
+                    hostnameEl.innerHTML = `
+                        <strong>Device:</strong> ${sysInfo.deviceInfo.hostname}<br>
+                        <strong>Platform:</strong> ${sysInfo.deviceInfo.platform}
+                    `;
+                }
+            } catch (error) {
+                console.error('Failed to get device info:', error);
+            }
+
+            console.log('GUI initialized successfully');
+        }
+
+        // Update status
+        async function updateStatus() {
+            try {
+                const status = await api.getAgentStatus();
+                updateStatusDisplay(status.running);
+            } catch (error) {
+                console.error('Failed to get status:', error);
+                statusEl.textContent = '● Error';
+                statusEl.className = 'status stopped';
+            }
+        }
+
+        // Update status display
+        function updateStatusDisplay(running) {
+            if (running) {
+                statusEl.textContent = '● Running';
+                statusEl.className = 'status running';
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+            } else {
+                statusEl.textContent = '● Stopped';
+                statusEl.className = 'status stopped';
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+            }
+        }
+
+        // Handle start
+        async function handleStart() {
+            console.log('Starting agent...');
+            startBtn.disabled = true;
+            startSpinner.style.display = 'inline-block';
+            
+            try {
+                await api.startAgent();
+                console.log('Agent started');
+            } catch (error) {
+                console.error('Failed to start agent:', error);
+                alert('Failed to start agent: ' + error.message);
+                startBtn.disabled = false;
+            } finally {
+                startSpinner.style.display = 'none';
+            }
+        }
+
+        // Handle stop
+        async function handleStop() {
+            console.log('Stopping agent...');
+            stopBtn.disabled = true;
+            stopSpinner.style.display = 'inline-block';
+            
+            try {
+                await api.stopAgent();
+                console.log('Agent stopped');
+            } catch (error) {
+                console.error('Failed to stop agent:', error);
+                alert('Failed to stop agent: ' + error.message);
+                stopBtn.disabled = false;
+            } finally {
+                stopSpinner.style.display = 'none';
+            }
+        }
+
+        // Initialize on load
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

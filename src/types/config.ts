@@ -9,6 +9,7 @@ export interface AgentConfig {
   retryAttempts: number;
   retryDelay: number; // in milliseconds
   collectSoftware: boolean;
+  softwareCollectionInterval: number; // number of report iterations between software collections
   collectPatchStatus: boolean;
   patchStatusInterval: number; // in seconds
   collectLogs: boolean;
@@ -19,8 +20,11 @@ export interface AgentConfig {
   logsCursor?: {
     last_collected_at?: string;
   };
+  collectProcesses: boolean;
+  processInterval: number; // in seconds
   logLevel: 'error' | 'warn' | 'info' | 'debug';
   logFile?: string;
+  autoStart: boolean; // Whether to start agent automatically on system startup
 }
 
 export const DEFAULT_CONFIG: Partial<AgentConfig> = {
@@ -30,7 +34,8 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   reportInterval: 300, // 5 minutes
   retryAttempts: 3,
   retryDelay: 1000, // 1 second
-  collectSoftware: false,
+  collectSoftware: true,
+  softwareCollectionInterval: 10, // collect software every 10 report iterations (approximately every 50 minutes if reportInterval is 5 minutes)
   collectPatchStatus: true,
   patchStatusInterval: 21600, // 6 hours
   collectLogs: true,
@@ -38,6 +43,9 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   logsMaxBatchSize: 200,
   logsMinSeverity: 'warning',
   logsIncludeRaw: false,
+  collectProcesses: true,
+  processInterval: 60, // 1 minute
   logLevel: 'info',
+  autoStart: false, // Auto-start disabled by default
 };
 

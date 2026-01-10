@@ -2,17 +2,47 @@
   "name": "novaris-agent",
   "version": "1.0.0",
   "description": "Novaris Device Monitoring Agent",
-  "main": "dist/index.js",
+  "main": "dist-electron/main.js",
   "scripts": {
     "build": "tsc",
+    "build-electron": "tsc -p tsconfig-electron.json",
+    "postbuild-electron": "node -e \"const fs=require('fs');const path=require('path');['dist-electron/ui','dist-electron/assets'].forEach(d=>fs.mkdirSync(d,{recursive:true}));const copyDir=(s,d)=>{try{fs.cpSync(s,d,{recursive:true,force:true})}catch(e){}};copyDir('src-electron/ui','dist-electron/ui');copyDir('src-electron/assets','dist-electron/assets')\"",
     "start": "node dist/index.js",
+    "start-electron": "npm run build-electron && electron dist-electron/main.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "lint": "eslint src --ext .ts",
+    "dev-electron": "cross-env NODE_ENV=development npm run build-electron && electron dist-electron/main.js",
+    "dist": "npm run build-electron && electron-builder",
+    "lint": "eslint src --ext .ts src-electron --ext .ts",
     "type-check": "tsc --noEmit"
   },
   "keywords": [],
-  "author": "",
+  "author": "Moonlay Technology",
   "license": "ISC",
+  "build": {
+    "appId": "com.novaris.agent",
+    "productName": "Novaris Agent",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "dist-electron/**/*",
+      "dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "target": "msi",
+      "sign": null,
+      "icon": "src-electron/assets/app_icon.png"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  },
+  "homepage": "./",
   "dependencies": {
     "axios": "^1.6.2",
     "systeminformation": "^5.21.20",
@@ -22,9 +52,11 @@
     "@types/node": "^20.10.6",
     "@typescript-eslint/eslint-plugin": "^6.17.0",
     "@typescript-eslint/parser": "^6.17.0",
+    "cross-env": "^10.1.0",
+    "electron": "^28.2.0",
+    "electron-builder": "^24.13.3",
     "eslint": "^8.56.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.3.3"
   }
 }
-

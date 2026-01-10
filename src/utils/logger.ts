@@ -2,6 +2,7 @@ import winston from 'winston';
 import * as path from 'path';
 import * as fs from 'fs';
 import { AgentConfig } from '../types/config';
+import { getInstallDirectory } from './config';
 
 let loggerInstance: winston.Logger | null = null;
 
@@ -10,7 +11,8 @@ export function createLogger(config: AgentConfig): winston.Logger {
     return loggerInstance;
   }
 
-  const logDir = path.join(process.cwd(), 'logs');
+  // Use installation directory for logs instead of current working directory
+  const logDir = path.join(getInstallDirectory(), 'logs');
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
   }

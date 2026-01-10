@@ -1,5 +1,5 @@
 import axios, { AxiosInstance } from 'axios';
-import { DeviceLogItem, DeviceReport, PatchStatusReport } from '../types/device';
+import { DeviceLogItem, DeviceReport, PatchStatusReport, ProcessData } from '../types/device';
 import { AgentConfig } from '../types/config';
 import { getLogger } from '../utils/logger';
 
@@ -9,6 +9,7 @@ export class ReportingService {
   private reportQueue: DeviceReport[] = [];
   private patchStatusQueue: PatchStatusReport[] = [];
   private logsQueue: DeviceLogItem[][] = [];
+  private processesQueue: ProcessData[][] = [];
   private isOnline: boolean = true;
 
   constructor(private config: AgentConfig) {
@@ -161,6 +162,7 @@ export class ReportingService {
           serial_number: deviceInfo.serialNumber,
           os_type: deviceInfo.osType,
           os_version: deviceInfo.osVersion,
+          agent_version: deviceInfo.agentVersion,
           ip_address: deviceInfo.ipAddress,
           mac_address: deviceInfo.macAddress,
           asset_tag: assetTag, // Include asset tag in registration
@@ -214,16 +216,19 @@ export class ReportingService {
 
         const payload = {
           cpu_usage: report.healthMetrics.cpuUsage,
+          cpu_cores: report.healthMetrics.cpuCores,
           ram_usage: report.healthMetrics.ramUsage,
           disk_usage: report.healthMetrics.diskUsage,
           uptime: report.healthMetrics.uptime,
           collected_at: report.healthMetrics.collectedAt.toISOString(),
+          agent_version: report.deviceInfo.agentVersion, // Include agent version with every health report
         };
 
         const response = await this.apiClient.post(`/devices/${deviceId}/health`, payload);
 
-        // Also sync software list if provided
-        if (report.softwareList && report.softwareList.length > 0) {
+        // Also sync software list if provided (even if empty, to handle uninstalled software)
+        // Only skip if softwareList is undefined (not collected) vs empty array (all uninstalled)
+        if (report.softwareList !== undefined) {
           try {
             await this.syncSoftwareList(deviceId, report.softwareList);
           } catch (error) {
@@ -275,13 +280,17 @@ export class ReportingService {
       try {
         this.logger.debug(`Reporting patch status (attempt ${attempt + 1}/${maxRetries})...`);
 
-        const payload = {
+        const payload: any = {
           os: status.os,
           missing_critical: status.missingCritical,
           pending_updates: status.pendingUpdates,
           last_checked_at: status.lastCheckedAt.toISOString(),
-          details: status.details ?? undefined,
         };
+
+        // Only include details if it's a non-empty string
+        if (status.details && status.details.trim()) {
+          payload.details = status.details;
+        }
 
         await this.apiClient.post(`/devices/${deviceId}/patch-status`, payload);
         this.logger.debug('Patch status report sent successfully');
@@ -333,15 +342,22 @@ export class ReportingService {
         this.logger.debug(`Reporting device logs (attempt ${attempt + 1}/${maxRetries})...`);
 
         const payload = {
-          logs: logs.map((l) => ({
-            severity: l.severity,
-            source: l.source,
-            message: l.message,
-            raw: l.raw ?? undefined,
-            collected_at: l.collectedAt.toISOString(),
-          })),
-        };
+          logs: logs.map((l) => {
+            const logEntry: any = {
+              severity: l.severity,
+              source: l.source,
+              message: l.message,
+              collected_at: l.collectedAt.toISOString(),
+            };
 
+            // Only include raw field if it has a value
+            if (l.raw !== null) {
+              logEntry.raw = l.raw;
+            }
+
+            return logEntry;
+          }),
+        };
         await this.apiClient.post(`/devices/${deviceId}/logs`, payload);
         this.logger.debug('Device logs sent successfully');
         return;
@@ -358,6 +374,7 @@ export class ReportingService {
           this.logger.error(`Device logs report failed (attempt ${attempt + 1}/${maxRetries})`, {
             status: error.response?.status,
             message: error.response?.data?.error || error.message,
+            response: error.response?.data,
           });
         }
 
@@ -375,24 +392,98 @@ export class ReportingService {
     }
   }
 
-  private async syncSoftwareList(deviceId: number, softwareList: DeviceReport['softwareList']): Promise<void> {
-    for (const software of softwareList) {
+  async reportProcesses(deviceId: number, processes: ProcessData[]): Promise<void> {
+    if (!processes.length) return;
+
+    if (!this.isOnline) {
+      this.logger.warn('Device is offline, queuing processes');
+      this.processesQueue.push(processes);
+      return;
+    }
+
+    const maxRetries = this.config.retryAttempts;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        await this.apiClient.post(`/devices/${deviceId}/software`, {
-          software_name: software.name,
-          version: software.version,
-          installed_at: software.installedAt?.toISOString(),
-        });
+        this.logger.debug(`Reporting processes (attempt ${attempt + 1}/${maxRetries})...`);
+
+        const payload = {
+          collected_at: processes[0]?.collectedAt.toISOString() || new Date().toISOString(),
+          processes: processes.map((p) => ({
+            process_name: p.processName.substring(0, 255),
+            pid: p.pid !== null ? p.pid : undefined,
+            cpu_usage: p.cpuUsage,
+            ram_usage: p.ramUsage,
+            command: p.command !== null ? p.command.substring(0, 2000) : undefined,
+          })),
+        };
+        await this.apiClient.post(`/devices/${deviceId}/processes`, payload);
+        this.logger.debug('Processes sent successfully');
+        return;
       } catch (error: any) {
-        // Ignore individual software sync errors
-        this.logger.debug(`Failed to sync software: ${software.name}`, { error: error.message });
+        lastError = error;
+        const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
+
+        if (isNetworkError) {
+          this.isOnline = false;
+          this.logger.warn(`Network error during processes report (attempt ${attempt + 1}/${maxRetries})`);
+          this.processesQueue.push(processes);
+          return;
+        } else {
+          this.logger.error(`Processes report failed (attempt ${attempt + 1}/${maxRetries})`, {
+            status: error.response?.status,
+            message: error.response?.data?.error || error.message,
+            response: error.response?.data,
+          });
+        }
+
+        if (attempt < maxRetries - 1) {
+          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          await this.sleep(delay);
+        }
       }
+    }
+
+    this.logger.warn('Failed to send processes after all retries, queuing for later');
+    this.processesQueue.push(processes);
+    if (lastError) {
+      this.logger.debug('Last processes error', { error: lastError.message });
+    }
+  }
+
+  private async syncSoftwareList(deviceId: number, softwareList: DeviceReport['softwareList']): Promise<void> {
+    // Send entire software list in one bulk request
+    // Backend will handle insert/update/delete and trigger policy evaluation
+    
+    // Handle undefined or empty software list
+    if (!softwareList || softwareList.length === 0) {
+      this.logger.debug('No software list to sync (empty or undefined)');
+      return;
+    }
+    
+    try {
+      await this.apiClient.post(`/devices/${deviceId}/software/sync`, {
+        software_list: softwareList.map(software => ({
+          software_name: software.name,
+          version: software.version || undefined,
+          installed_at: software.installedAt?.toISOString(),
+        })),
+      });
+      this.logger.debug(`Synced ${softwareList.length} software items via bulk sync`);
+    } catch (error: any) {
+      this.logger.error(`Failed to sync software list`, { 
+        error: error.message,
+        deviceId,
+        softwareCount: softwareList.length 
+      });
+      throw error;
     }
   }
 
   async processQueue(): Promise<void> {
     if (
-      (!this.reportQueue.length && !this.patchStatusQueue.length && !this.logsQueue.length) ||
+      (!this.reportQueue.length && !this.patchStatusQueue.length && !this.logsQueue.length && !this.processesQueue.length) ||
       !this.isOnline ||
       !this.config.deviceId
     ) {
@@ -400,7 +491,7 @@ export class ReportingService {
     }
 
     this.logger.info(
-      `Processing queued reports... health=${this.reportQueue.length}, patch_status=${this.patchStatusQueue.length}, logs=${this.logsQueue.length}`
+      `Processing queued reports... health=${this.reportQueue.length}, patch_status=${this.patchStatusQueue.length}, logs=${this.logsQueue.length}, processes=${this.processesQueue.length}`
     );
 
     const reports = [...this.reportQueue];
@@ -435,6 +526,17 @@ export class ReportingService {
       } catch (error) {
         this.logger.error('Failed to process queued device logs', { error });
         this.logsQueue.push(batch);
+      }
+    }
+
+    const processBatches = [...this.processesQueue];
+    this.processesQueue = [];
+    for (const batch of processBatches) {
+      try {
+        await this.reportProcesses(this.config.deviceId!, batch);
+      } catch (error) {
+        this.logger.error('Failed to process queued processes', { error });
+        this.processesQueue.push(batch);
       }
     }
   }

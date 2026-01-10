@@ -16,7 +16,8 @@ export interface InstalledSoftware {
 }
 
 export interface HealthMetrics {
-  cpuUsage: number; // percentage
+  cpuUsage: number; // percentage (overall CPU usage across all cores)
+  cpuCores: number; // number of CPU cores
   ramUsage: number; // percentage
   diskUsage: number; // percentage (aggregate or primary drive)
   uptime: number; // seconds
@@ -41,9 +42,18 @@ export interface DeviceLogItem {
   collectedAt: Date;
 }
 
+export interface ProcessData {
+  processName: string;
+  pid: number | null;
+  cpuUsage: number; // percentage
+  ramUsage: number; // percentage
+  command: string | null;
+  collectedAt: Date;
+}
+
 export interface DeviceReport {
   deviceInfo: DeviceInfo;
   healthMetrics: HealthMetrics;
-  softwareList: InstalledSoftware[];
+  softwareList?: InstalledSoftware[]; // Optional: undefined means never collected, empty array means no software installed
 }
 
