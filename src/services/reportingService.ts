@@ -11,6 +11,7 @@ export class ReportingService {
   private logsQueue: DeviceLogItem[][] = [];
   private processesQueue: ProcessData[][] = [];
   private isOnline: boolean = true;
+  private nextOnlineCheckAt: number | null = null;
 
   constructor(private config: AgentConfig) {
     this.apiClient = axios.create({
@@ -24,6 +25,36 @@ export class ReportingService {
 
     // Monitor online/offline status (Node.js environment)
     // Offline status is detected by failed network requests
+  }
+
+  private shouldAttemptOnline(): boolean {
+    if (this.isOnline) {
+      return true;
+    }
+
+    if (this.nextOnlineCheckAt === null) {
+      return true;
+    }
+
+    return Date.now() >= this.nextOnlineCheckAt;
+  }
+
+  private markOffline(reason: string): void {
+    if (this.isOnline) {
+      this.logger.warn(`Network appears offline: ${reason}`);
+    }
+
+    this.isOnline = false;
+    this.nextOnlineCheckAt = Date.now() + this.config.retryDelay;
+  }
+
+  private markOnline(): void {
+    if (!this.isOnline) {
+      this.logger.info('Network restored, resuming reporting');
+    }
+
+    this.isOnline = true;
+    this.nextOnlineCheckAt = null;
   }
 
   async findAssetByTag(assetTag: string): Promise<{ id: number; deviceId?: number } | null> {
@@ -42,6 +73,7 @@ export class ReportingService {
           return null;
         }
 
+        this.markOnline();
         this.logger.info(`Found asset with ID: ${asset.id} for tag: ${assetTag}`);
         
         // Check if asset has a device linked (device_id might be in the response)
@@ -54,7 +86,7 @@ export class ReportingService {
         const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
         
         if (isNetworkError) {
-          this.isOnline = false;
+          this.markOffline('asset search failed');
           this.logger.warn(`Network error during asset search (attempt ${attempt + 1}/${maxRetries})`);
         } else if (error.response?.status === 404) {
           // Asset not found is not an error, just return null
@@ -102,6 +134,7 @@ export class ReportingService {
           throw new Error('Asset ID not found in response');
         }
 
+        this.markOnline();
         this.logger.info(`Asset created successfully with ID: ${asset.id}`);
         return asset.id;
       } catch (error: any) {
@@ -109,7 +142,7 @@ export class ReportingService {
         const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
         
         if (isNetworkError) {
-          this.isOnline = false;
+          this.markOffline('asset creation failed');
           this.logger.warn(`Network error during asset creation (attempt ${attempt + 1}/${maxRetries})`);
         } else {
           this.logger.error(`Asset creation failed (attempt ${attempt + 1}/${maxRetries})`, {
@@ -170,6 +203,7 @@ export class ReportingService {
 
         const deviceId = response.data?.data?.id || response.data?.id;
         if (deviceId) {
+          this.markOnline();
           this.logger.info(`Device registered successfully with ID: ${deviceId}`);
           return deviceId;
         }
@@ -180,7 +214,7 @@ export class ReportingService {
         const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
         
         if (isNetworkError) {
-          this.isOnline = false;
+          this.markOffline('device registration failed');
           this.logger.warn(`Network error during registration (attempt ${attempt + 1}/${maxRetries})`);
         } else {
           this.logger.error(`Registration failed (attempt ${attempt + 1}/${maxRetries})`, {
@@ -201,7 +235,7 @@ export class ReportingService {
   }
 
   async reportHealth(deviceId: number, report: DeviceReport): Promise<void> {
-    if (!this.isOnline) {
+    if (!this.shouldAttemptOnline()) {
       this.logger.warn('Device is offline, queuing report');
       this.reportQueue.push(report);
       return;
@@ -226,6 +260,8 @@ export class ReportingService {
 
         const response = await this.apiClient.post(`/devices/${deviceId}/health`, payload);
 
+        this.markOnline();
+
         // Also sync software list if provided (even if empty, to handle uninstalled software)
         // Only skip if softwareList is undefined (not collected) vs empty array (all uninstalled)
         if (report.softwareList !== undefined) {
@@ -243,7 +279,7 @@ export class ReportingService {
         const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
         
         if (isNetworkError) {
-          this.isOnline = false;
+          this.markOffline('health report failed');
           this.logger.warn(`Network error during health report (attempt ${attempt + 1}/${maxRetries})`);
           this.reportQueue.push(report);
           return;
@@ -267,7 +303,7 @@ export class ReportingService {
   }
 
   async reportPatchStatus(deviceId: number, status: PatchStatusReport): Promise<void> {
-    if (!this.isOnline) {
+    if (!this.shouldAttemptOnline()) {
       this.logger.warn('Device is offline, queuing patch status');
       this.patchStatusQueue.push(status);
       return;
@@ -293,6 +329,7 @@ export class ReportingService {
         }
 
         await this.apiClient.post(`/devices/${deviceId}/patch-status`, payload);
+        this.markOnline();
         this.logger.debug('Patch status report sent successfully');
         return;
       } catch (error: any) {
@@ -300,7 +337,7 @@ export class ReportingService {
         const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
 
         if (isNetworkError) {
-          this.isOnline = false;
+          this.markOffline('patch status report failed');
           this.logger.warn(`Network error during patch status report (attempt ${attempt + 1}/${maxRetries})`);
           this.patchStatusQueue.push(status);
           return;
@@ -328,7 +365,7 @@ export class ReportingService {
   async reportDeviceLogs(deviceId: number, logs: DeviceLogItem[]): Promise<void> {
     if (!logs.length) return;
 
-    if (!this.isOnline) {
+    if (!this.shouldAttemptOnline()) {
       this.logger.warn('Device is offline, queuing device logs');
       this.logsQueue.push(logs);
       return;
@@ -359,6 +396,7 @@ export class ReportingService {
           }),
         };
         await this.apiClient.post(`/devices/${deviceId}/logs`, payload);
+        this.markOnline();
         this.logger.debug('Device logs sent successfully');
         return;
       } catch (error: any) {
@@ -366,7 +404,7 @@ export class ReportingService {
         const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
 
         if (isNetworkError) {
-          this.isOnline = false;
+          this.markOffline('device logs report failed');
           this.logger.warn(`Network error during device logs report (attempt ${attempt + 1}/${maxRetries})`);
           this.logsQueue.push(logs);
           return;
@@ -395,7 +433,7 @@ export class ReportingService {
   async reportProcesses(deviceId: number, processes: ProcessData[]): Promise<void> {
     if (!processes.length) return;
 
-    if (!this.isOnline) {
+    if (!this.shouldAttemptOnline()) {
       this.logger.warn('Device is offline, queuing processes');
       this.processesQueue.push(processes);
       return;
@@ -419,6 +457,7 @@ export class ReportingService {
           })),
         };
         await this.apiClient.post(`/devices/${deviceId}/processes`, payload);
+        this.markOnline();
         this.logger.debug('Processes sent successfully');
         return;
       } catch (error: any) {
@@ -426,7 +465,7 @@ export class ReportingService {
         const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
 
         if (isNetworkError) {
-          this.isOnline = false;
+          this.markOffline('processes report failed');
           this.logger.warn(`Network error during processes report (attempt ${attempt + 1}/${maxRetries})`);
           this.processesQueue.push(processes);
           return;
@@ -484,9 +523,12 @@ export class ReportingService {
   async processQueue(): Promise<void> {
     if (
       (!this.reportQueue.length && !this.patchStatusQueue.length && !this.logsQueue.length && !this.processesQueue.length) ||
-      !this.isOnline ||
       !this.config.deviceId
     ) {
+      return;
+    }
+
+    if (!this.shouldAttemptOnline()) {
       return;
     }
 

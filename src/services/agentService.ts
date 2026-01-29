@@ -24,6 +24,7 @@ export class AgentService {
   private patchStatusInterval: NodeJS.Timeout | null = null;
   private logsInterval: NodeJS.Timeout | null = null;
   private processInterval: NodeJS.Timeout | null = null;
+  private queueInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private lastDeviceInfo: DeviceReport['deviceInfo'] | null = null;
   private lastPatchStatusAt: Date | null = null;
@@ -67,6 +68,7 @@ export class AgentService {
       this.startPatchStatusReporting();
       this.startLogsReporting();
       this.startProcessReporting();
+      this.startQueueProcessing();
 
       this.logger.info('Novaris Agent started successfully');
     } catch (error) {
@@ -107,6 +109,11 @@ export class AgentService {
     if (this.processInterval) {
       clearInterval(this.processInterval);
       this.processInterval = null;
+    }
+
+    if (this.queueInterval) {
+      clearInterval(this.queueInterval);
+      this.queueInterval = null;
     }
 
     // Process any remaining queued reports
@@ -262,6 +269,22 @@ export class AgentService {
         this.logger.error('Process report failed', { error });
       });
     }, this.config.processInterval * 1000);
+  }
+
+  private startQueueProcessing(): void {
+    const intervalSeconds = Math.max(30, this.config.reportInterval);
+    this.logger.info(`Starting queue processing (interval: ${intervalSeconds}s)`);
+
+    // Process immediately
+    this.reportingService.processQueue().catch((error) => {
+      this.logger.error('Initial queue processing failed', { error });
+    });
+
+    this.queueInterval = setInterval(() => {
+      this.reportingService.processQueue().catch((error) => {
+        this.logger.error('Queue processing failed', { error });
+      });
+    }, intervalSeconds * 1000);
   }
 
   private async collectData(): Promise<void> {
