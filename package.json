@@ -5,13 +5,14 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "build": "tsc",
-    "build-electron": "tsc -p tsconfig-electron.json",
+    "build-electron": "npm run build && tsc -p tsconfig-electron.json",
     "postbuild-electron": "node -e \"const fs=require('fs');const path=require('path');['dist-electron/ui','dist-electron/assets'].forEach(d=>fs.mkdirSync(d,{recursive:true}));const copyDir=(s,d)=>{try{fs.cpSync(s,d,{recursive:true,force:true})}catch(e){}};copyDir('src-electron/ui','dist-electron/ui');copyDir('src-electron/assets','dist-electron/assets')\"",
+    "clean": "node -e \"const fs=require('fs');['dist-electron','release'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}})\"",
     "start": "node dist/index.js",
     "start-electron": "npm run build-electron && electron dist-electron/main.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "dev-electron": "cross-env NODE_ENV=development npm run build-electron && electron dist-electron/main.js",
-    "dist": "npm run build-electron && electron-builder",
+    "dist": "npm run clean && npm run build-electron && electron-builder",
     "lint": "eslint src --ext .ts src-electron --ext .ts",
     "type-check": "tsc --noEmit"
   },
@@ -22,13 +23,19 @@
     "appId": "com.novaris.agent",
     "productName": "Novaris Agent",
     "directories": {
-      "output": "dist-electron"
+      "output": "release"
     },
     "files": [
       "dist-electron/**/*",
       "dist/**/*",
-      "node_modules/**/*",
-      "package.json"
+      "package.json",
+      "!**/*.d.ts",
+      "!**/*.d.ts.map",
+      "!**/*.map"
+    ],
+    "electronLanguages": [
+      "en-US",
+      "id"
     ],
     "mac": {
       "category": "public.app-category.utilities"

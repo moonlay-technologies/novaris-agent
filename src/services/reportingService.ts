@@ -45,6 +45,11 @@ export class ReportingService {
       return true;
     }
 
+    if (!Number.isFinite(this.nextOnlineCheckAt)) {
+      this.nextOnlineCheckAt = Date.now() + this.getRetryDelayMs();
+      return true;
+    }
+
     return Date.now() >= this.nextOnlineCheckAt;
   }
 
@@ -54,7 +59,7 @@ export class ReportingService {
     }
 
     this.isOnline = false;
-    this.nextOnlineCheckAt = Date.now() + this.config.retryDelay;
+    this.nextOnlineCheckAt = Date.now() + this.getRetryDelayMs();
   }
 
   private markOnline(): void {
@@ -109,7 +114,7 @@ export class ReportingService {
         }
 
         if (attempt < maxRetries - 1 && error.response?.status !== 404) {
-          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          const delay = this.getBackoffDelay(attempt);
           this.logger.info(`Retrying in ${delay}ms...`);
           await this.sleep(delay);
         }
@@ -161,7 +166,7 @@ export class ReportingService {
         }
 
         if (attempt < maxRetries - 1) {
-          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          const delay = this.getBackoffDelay(attempt);
           this.logger.info(`Retrying in ${delay}ms...`);
           await this.sleep(delay);
         }
@@ -233,7 +238,7 @@ export class ReportingService {
         }
 
         if (attempt < maxRetries - 1) {
-          const delay = this.config.retryDelay * Math.pow(2, attempt); // Exponential backoff
+          const delay = this.getBackoffDelay(attempt); // Exponential backoff
           this.logger.info(`Retrying in ${delay}ms...`);
           await this.sleep(delay);
         }
@@ -300,7 +305,7 @@ export class ReportingService {
         }
 
         if (attempt < maxRetries - 1) {
-          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          const delay = this.getBackoffDelay(attempt);
           await this.sleep(delay);
         }
       }
@@ -358,7 +363,7 @@ export class ReportingService {
         }
 
         if (attempt < maxRetries - 1) {
-          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          const delay = this.getBackoffDelay(attempt);
           await this.sleep(delay);
         }
       }
@@ -491,7 +496,7 @@ export class ReportingService {
         }
 
         if (attempt < maxRetries - 1) {
-          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          const delay = this.getBackoffDelay(attempt);
           await this.sleep(delay);
         }
       }
@@ -615,7 +620,7 @@ export class ReportingService {
         }
 
         if (attempt < maxRetries - 1) {
-          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          const delay = this.getBackoffDelay(attempt);
           await this.sleep(delay);
         }
       }
@@ -749,6 +754,23 @@ export class ReportingService {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  public getOnlineStatus(): boolean {
+    return this.isOnline;
+  }
+
+  private getRetryDelayMs(): number {
+    const delay = Number(this.config.retryDelay);
+    if (!Number.isFinite(delay) || delay < 0) {
+      return 1000;
+    }
+    return delay;
+  }
+
+  private getBackoffDelay(attempt: number): number {
+    const baseDelay = this.getRetryDelayMs();
+    return baseDelay * Math.pow(2, attempt);
   }
 }
 

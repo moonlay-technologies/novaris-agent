@@ -369,18 +369,22 @@ function updateTrayMenu(): void {
 
 function updateUI(): void {
   if (mainWindow) {
+    const online = agentService ? agentService.getOnlineStatus() : null;
     mainWindow.webContents.send('agent-status-changed', {
       running: isAgentRunning,
-      status: isAgentRunning ? 'Running' : 'Stopped'
+      status: isAgentRunning ? 'Running' : 'Stopped',
+      online
     });
   }
 }
 
 // IPC handlers
 ipcMain.handle('get-agent-status', () => {
+  const online = agentService ? agentService.getOnlineStatus() : null;
   return {
     running: isAgentRunning,
-    status: isAgentRunning ? 'Running' : 'Stopped'
+    status: isAgentRunning ? 'Running' : 'Stopped',
+    online
   };
 });
 
