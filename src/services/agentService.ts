@@ -479,5 +479,9 @@ export class AgentService {
       softwareList,
     };
   }
+
+  public getOnlineStatus(): boolean {
+    return this.reportingService.getOnlineStatus();
+  }
 }
 

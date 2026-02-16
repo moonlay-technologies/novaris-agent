@@ -69,6 +69,31 @@
             color: #856404;
         }
 
+        .indicator {
+            display: inline-block;
+            padding: 8px 18px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            transition: all 0.3s ease;
+        }
+
+        .indicator.online {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .indicator.offline {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .indicator.unknown {
+            background-color: #e2e3e5;
+            color: #6c757d;
+        }
+
         .device-info {
             background: #f8f9fa;
             border-radius: 10px;
@@ -182,6 +207,10 @@
         <div id="status" class="status loading">
             ● Loading...
         </div>
+
+        <div id="network-status" class="indicator unknown">
+            ● Network: Checking...
+        </div>
         
         <div id="device-info" class="device-info">
             <div id="hostname">Loading device info...</div>
@@ -217,6 +246,7 @@
         
         // DOM elements
         const statusEl = document.getElementById('status');
+        const networkStatusEl = document.getElementById('network-status');
         const hostnameEl = document.getElementById('hostname');
         const startBtn = document.getElementById('start-btn');
         const stopBtn = document.getElementById('stop-btn');
@@ -247,8 +277,13 @@
             // Listen for status changes
             api.onAgentStatusChanged((event, data) => {
                 console.log('Status changed:', data);
-                updateStatusDisplay(data.running);
+                updateStatusDisplay(data.running, data.online);
             });
+
+            // Periodic refresh to keep network status updated
+            setInterval(() => {
+                updateStatus();
+            }, 10000);
 
             // Get device info
             try {
@@ -270,26 +305,41 @@
         async function updateStatus() {
             try {
                 const status = await api.getAgentStatus();
-                updateStatusDisplay(status.running);
+                updateStatusDisplay(status.running, status.online);
             } catch (error) {
                 console.error('Failed to get status:', error);
                 statusEl.textContent = '● Error';
                 statusEl.className = 'status stopped';
+                networkStatusEl.textContent = '● Network: Unknown';
+                networkStatusEl.className = 'indicator unknown';
             }
         }
 
         // Update status display
-        function updateStatusDisplay(running) {
+        function updateStatusDisplay(running, online) {
             if (running) {
                 statusEl.textContent = '● Running';
                 statusEl.className = 'status running';
                 startBtn.disabled = true;
                 stopBtn.disabled = false;
+
+                if (online === true) {
+                    networkStatusEl.textContent = '● Network: Online';
+                    networkStatusEl.className = 'indicator online';
+                } else if (online === false) {
+                    networkStatusEl.textContent = '● Network: Offline';
+                    networkStatusEl.className = 'indicator offline';
+                } else {
+                    networkStatusEl.textContent = '● Network: Checking...';
+                    networkStatusEl.className = 'indicator unknown';
+                }
             } else {
                 statusEl.textContent = '● Stopped';
                 statusEl.className = 'status stopped';
                 startBtn.disabled = false;
                 stopBtn.disabled = true;
+                networkStatusEl.textContent = '● Network: Not running';
+                networkStatusEl.className = 'indicator unknown';
             }
         }
 

@@ -7,4 +7,5 @@ config.json
 .DS_Store
 *.pem
 *.key
+release/
 
