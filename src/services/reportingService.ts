@@ -1,5 +1,12 @@
 import axios, { AxiosInstance } from 'axios';
-import { DeviceLogItem, DeviceReport, PatchStatusReport, ProcessData } from '../types/device';
+import {
+  DeviceLogItem,
+  DeviceReport,
+  PatchStatusReport,
+  ProcessData,
+  SecurityEvent,
+  SecurityPostureReport,
+} from '../types/device';
 import { AgentConfig } from '../types/config';
 import { getLogger } from '../utils/logger';
 
@@ -8,7 +15,9 @@ export class ReportingService {
   private logger = getLogger();
   private reportQueue: DeviceReport[] = [];
   private patchStatusQueue: PatchStatusReport[] = [];
+  private securityPostureQueue: SecurityPostureReport[] = [];
   private logsQueue: DeviceLogItem[][] = [];
+  private securityEventsQueue: SecurityEvent[][] = [];
   private processesQueue: ProcessData[][] = [];
   private isOnline: boolean = true;
   private nextOnlineCheckAt: number | null = null;
@@ -362,6 +371,71 @@ export class ReportingService {
     }
   }
 
+  async reportSecurityPosture(deviceId: number, posture: SecurityPostureReport): Promise<void> {
+    if (!this.shouldAttemptOnline()) {
+      this.logger.warn('Device is offline, queuing security posture');
+      this.securityPostureQueue.push(posture);
+      return;
+    }
+
+    const maxRetries = this.config.retryAttempts;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        this.logger.debug(`Reporting security posture (attempt ${attempt + 1}/${maxRetries})...`);
+
+        const payload: any = {
+          collected_at: posture.collectedAt.toISOString(),
+          antivirus_installed: posture.antivirusInstalled,
+          antivirus_enabled: posture.antivirusEnabled,
+          antivirus_up_to_date: posture.antivirusUpToDate,
+          antivirus_product_name: posture.antivirusProductName ?? null,
+          firewall_enabled: posture.firewallEnabled,
+          firewall_profile: posture.firewallProfile ?? null,
+          disk_encryption_enabled: posture.diskEncryptionEnabled,
+          disk_encryption_method: posture.diskEncryptionMethod ?? null,
+          disk_encryption_volumes: posture.diskEncryptionVolumes ?? null,
+          patch_missing_critical: posture.patchMissingCritical ?? null,
+          patch_pending_updates: posture.patchPendingUpdates ?? null,
+          patch_last_checked_at: posture.patchLastCheckedAt?.toISOString() ?? null,
+          metadata: posture.metadata ?? null,
+        };
+
+        await this.apiClient.post(`/devices/${deviceId}/security-posture`, payload);
+        this.markOnline();
+        this.logger.debug('Security posture sent successfully');
+        return;
+      } catch (error: any) {
+        lastError = error;
+        const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
+
+        if (isNetworkError) {
+          this.markOffline('security posture report failed');
+          this.logger.warn(`Network error during security posture report (attempt ${attempt + 1}/${maxRetries})`);
+          this.securityPostureQueue.push(posture);
+          return;
+        } else {
+          this.logger.error(`Security posture report failed (attempt ${attempt + 1}/${maxRetries})`, {
+            status: error.response?.status,
+            message: error.response?.data?.error || error.message,
+          });
+        }
+
+        if (attempt < maxRetries - 1) {
+          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    this.logger.warn('Failed to send security posture after all retries, queuing for later');
+    this.securityPostureQueue.push(posture);
+    if (lastError) {
+      this.logger.debug('Last security posture error', { error: lastError.message });
+    }
+  }
+
   async reportDeviceLogs(deviceId: number, logs: DeviceLogItem[]): Promise<void> {
     if (!logs.length) return;
 
@@ -427,6 +501,69 @@ export class ReportingService {
     this.logsQueue.push(logs);
     if (lastError) {
       this.logger.debug('Last device logs error', { error: lastError.message });
+    }
+  }
+
+  async reportSecurityEvents(deviceId: number, events: SecurityEvent[]): Promise<void> {
+    if (!events.length) return;
+
+    if (!this.shouldAttemptOnline()) {
+      this.logger.warn('Device is offline, queuing security events');
+      this.securityEventsQueue.push(events);
+      return;
+    }
+
+    const maxRetries = this.config.retryAttempts;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        this.logger.debug(`Reporting security events (attempt ${attempt + 1}/${maxRetries})...`);
+
+        const payload = {
+          events: events.map((event) => ({
+            event_id: event.eventId,
+            event_type: event.eventType,
+            severity: event.severity,
+            source: event.source,
+            message: event.message,
+            collected_at: event.collectedAt.toISOString(),
+            payload: event.payload ?? null,
+          })),
+        };
+
+        await this.apiClient.post(`/devices/${deviceId}/security-events`, payload);
+        this.markOnline();
+        this.logger.debug('Security events sent successfully');
+        return;
+      } catch (error: any) {
+        lastError = error;
+        const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
+
+        if (isNetworkError) {
+          this.markOffline('security events report failed');
+          this.logger.warn(`Network error during security events report (attempt ${attempt + 1}/${maxRetries})`);
+          this.securityEventsQueue.push(events);
+          return;
+        } else {
+          this.logger.error(`Security events report failed (attempt ${attempt + 1}/${maxRetries})`, {
+            status: error.response?.status,
+            message: error.response?.data?.error || error.message,
+            response: error.response?.data,
+          });
+        }
+
+        if (attempt < maxRetries - 1) {
+          const delay = this.config.retryDelay * Math.pow(2, attempt);
+          await this.sleep(delay);
+        }
+      }
+    }
+
+    this.logger.warn('Failed to send security events after all retries, queuing for later');
+    this.securityEventsQueue.push(events);
+    if (lastError) {
+      this.logger.debug('Last security events error', { error: lastError.message });
     }
   }
 
@@ -522,7 +659,12 @@ export class ReportingService {
 
   async processQueue(): Promise<void> {
     if (
-      (!this.reportQueue.length && !this.patchStatusQueue.length && !this.logsQueue.length && !this.processesQueue.length) ||
+      (!this.reportQueue.length &&
+        !this.patchStatusQueue.length &&
+        !this.securityPostureQueue.length &&
+        !this.logsQueue.length &&
+        !this.securityEventsQueue.length &&
+        !this.processesQueue.length) ||
       !this.config.deviceId
     ) {
       return;
@@ -533,7 +675,7 @@ export class ReportingService {
     }
 
     this.logger.info(
-      `Processing queued reports... health=${this.reportQueue.length}, patch_status=${this.patchStatusQueue.length}, logs=${this.logsQueue.length}, processes=${this.processesQueue.length}`
+      `Processing queued reports... health=${this.reportQueue.length}, patch_status=${this.patchStatusQueue.length}, security_posture=${this.securityPostureQueue.length}, logs=${this.logsQueue.length}, security_events=${this.securityEventsQueue.length}, processes=${this.processesQueue.length}`
     );
 
     const reports = [...this.reportQueue];
@@ -560,6 +702,17 @@ export class ReportingService {
       }
     }
 
+    const securityPostures = [...this.securityPostureQueue];
+    this.securityPostureQueue = [];
+    for (const posture of securityPostures) {
+      try {
+        await this.reportSecurityPosture(this.config.deviceId!, posture);
+      } catch (error) {
+        this.logger.error('Failed to process queued security posture', { error });
+        this.securityPostureQueue.push(posture);
+      }
+    }
+
     const logBatches = [...this.logsQueue];
     this.logsQueue = [];
     for (const batch of logBatches) {
@@ -579,6 +732,17 @@ export class ReportingService {
       } catch (error) {
         this.logger.error('Failed to process queued processes', { error });
         this.processesQueue.push(batch);
+      }
+    }
+
+    const securityEventBatches = [...this.securityEventsQueue];
+    this.securityEventsQueue = [];
+    for (const batch of securityEventBatches) {
+      try {
+        await this.reportSecurityEvents(this.config.deviceId!, batch);
+      } catch (error) {
+        this.logger.error('Failed to process queued security events', { error });
+        this.securityEventsQueue.push(batch);
       }
     }
   }

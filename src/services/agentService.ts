@@ -1,12 +1,21 @@
 import { AgentConfig } from '../types/config';
-import { DeviceLogItem, DeviceReport, PatchStatusReport } from '../types/device';
+import {
+  DeviceLogItem,
+  DeviceReport,
+  PatchStatusReport,
+  SecurityEvent,
+  SecurityPostureReport,
+} from '../types/device';
 import { DeviceInfoCollector } from '../collectors/deviceInfoCollector';
 import { SoftwareCollector } from '../collectors/softwareCollector';
 import { HealthMetricsCollector } from '../collectors/healthMetricsCollector';
 import { PatchStatusCollector } from '../collectors/patchStatusCollector';
+import { SecurityPostureCollector } from '../collectors/securityPostureCollector';
 import { LogCollector } from '../collectors/logCollector';
 import { ProcessCollector } from '../collectors/processCollector';
 import { ReportingService } from './reportingService';
+import { SecurityEventNormalizer } from './securityEventNormalizer';
+import { ResponseActionService } from './responseActionService';
 import { getLogger } from '../utils/logger';
 import { saveConfig } from '../utils/config';
 
@@ -15,19 +24,25 @@ export class AgentService {
   private softwareCollector: SoftwareCollector;
   private healthMetricsCollector: HealthMetricsCollector;
   private patchStatusCollector: PatchStatusCollector;
+  private securityPostureCollector: SecurityPostureCollector;
   private logCollector: LogCollector;
   private processCollector: ProcessCollector;
   private reportingService: ReportingService;
+  private securityEventNormalizer: SecurityEventNormalizer;
+  private responseActionService: ResponseActionService;
   private logger = getLogger();
   private collectInterval: NodeJS.Timeout | null = null;
   private reportInterval: NodeJS.Timeout | null = null;
   private patchStatusInterval: NodeJS.Timeout | null = null;
+  private securityPostureInterval: NodeJS.Timeout | null = null;
   private logsInterval: NodeJS.Timeout | null = null;
   private processInterval: NodeJS.Timeout | null = null;
   private queueInterval: NodeJS.Timeout | null = null;
+  private responseActionsInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
   private lastDeviceInfo: DeviceReport['deviceInfo'] | null = null;
   private lastPatchStatusAt: Date | null = null;
+  private lastPatchStatus: PatchStatusReport | null = null;
   private lastLogsCursorAt: Date | null = null;
   private softwareCollectionIteration: number = 0;
   private lastSoftwareList: DeviceReport['softwareList'] | undefined = undefined;
@@ -37,9 +52,12 @@ export class AgentService {
     this.softwareCollector = new SoftwareCollector();
     this.healthMetricsCollector = new HealthMetricsCollector();
     this.patchStatusCollector = new PatchStatusCollector();
+    this.securityPostureCollector = new SecurityPostureCollector();
     this.logCollector = new LogCollector();
     this.processCollector = new ProcessCollector();
     this.reportingService = new ReportingService(config);
+    this.securityEventNormalizer = new SecurityEventNormalizer();
+    this.responseActionService = new ResponseActionService(config);
   }
 
   async start(): Promise<void> {
@@ -66,8 +84,10 @@ export class AgentService {
       this.startCollection();
       this.startReporting();
       this.startPatchStatusReporting();
+      this.startSecurityPostureReporting();
       this.startLogsReporting();
       this.startProcessReporting();
+      this.startResponseActionsPolling();
       this.startQueueProcessing();
 
       this.logger.info('Novaris Agent started successfully');
@@ -101,6 +121,11 @@ export class AgentService {
       this.patchStatusInterval = null;
     }
 
+    if (this.securityPostureInterval) {
+      clearInterval(this.securityPostureInterval);
+      this.securityPostureInterval = null;
+    }
+
     if (this.logsInterval) {
       clearInterval(this.logsInterval);
       this.logsInterval = null;
@@ -109,6 +134,11 @@ export class AgentService {
     if (this.processInterval) {
       clearInterval(this.processInterval);
       this.processInterval = null;
+    }
+
+    if (this.responseActionsInterval) {
+      clearInterval(this.responseActionsInterval);
+      this.responseActionsInterval = null;
     }
 
     if (this.queueInterval) {
@@ -221,6 +251,25 @@ export class AgentService {
     }, this.config.patchStatusInterval * 1000);
   }
 
+  private startSecurityPostureReporting(): void {
+    if (!this.config.collectSecurityPosture) {
+      this.logger.info('Security posture collection disabled (collectSecurityPosture=false)');
+      return;
+    }
+
+    this.logger.info(`Starting security posture reporting (interval: ${this.config.securityPostureInterval}s)`);
+
+    this.reportSecurityPosture().catch((error) => {
+      this.logger.error('Initial security posture report failed', { error });
+    });
+
+    this.securityPostureInterval = setInterval(() => {
+      this.reportSecurityPosture().catch((error) => {
+        this.logger.error('Security posture report failed', { error });
+      });
+    }, this.config.securityPostureInterval * 1000);
+  }
+
   private startLogsReporting(): void {
     if (!this.config.collectLogs) {
       this.logger.info('Log collection disabled (collectLogs=false)');
@@ -269,6 +318,25 @@ export class AgentService {
         this.logger.error('Process report failed', { error });
       });
     }, this.config.processInterval * 1000);
+  }
+
+  private startResponseActionsPolling(): void {
+    if (!this.config.pollResponseActions) {
+      this.logger.info('Response actions polling disabled (pollResponseActions=false)');
+      return;
+    }
+
+    this.logger.info(`Starting response actions polling (interval: ${this.config.responseActionsInterval}s)`);
+
+    this.pollResponseActions().catch((error) => {
+      this.logger.error('Initial response actions polling failed', { error });
+    });
+
+    this.responseActionsInterval = setInterval(() => {
+      this.pollResponseActions().catch((error) => {
+        this.logger.error('Response actions polling failed', { error });
+      });
+    }, this.config.responseActionsInterval * 1000);
   }
 
   private startQueueProcessing(): void {
@@ -377,6 +445,7 @@ export class AgentService {
       const status: PatchStatusReport = await this.patchStatusCollector.collect();
       await this.reportingService.reportPatchStatus(this.config.deviceId, status);
       this.lastPatchStatusAt = new Date();
+      this.lastPatchStatus = status;
     } catch (error: any) {
       this.logger.error('Failed to report patch status', {
         status: error.response?.status,
@@ -409,6 +478,13 @@ export class AgentService {
 
       if (deduped.length > 0) {
         await this.reportingService.reportDeviceLogs(this.config.deviceId, deduped);
+
+        if (this.config.collectSecurityEvents) {
+          const events = this.filterSecurityEventsBySeverity(this.securityEventNormalizer.normalize(deduped));
+          if (events.length > 0) {
+            await this.reportingService.reportSecurityEvents(this.config.deviceId, events);
+          }
+        }
       }
 
       this.lastLogsCursorAt = cursor;
@@ -420,6 +496,33 @@ export class AgentService {
       this.logger.error('Failed to report logs', {
         status: error.response?.status,
         message: error.response?.data?.error || error.message || error.toString(),
+        response: error.response?.data,
+        error
+      });
+      throw error;
+    }
+  }
+
+  private async reportSecurityPosture(): Promise<void> {
+    if (!this.config.deviceId) {
+      this.logger.warn('Device not registered yet, skipping security posture report');
+      return;
+    }
+
+    try {
+      const posture: SecurityPostureReport = await this.securityPostureCollector.collect();
+
+      if (this.lastPatchStatus) {
+        posture.patchMissingCritical = this.lastPatchStatus.missingCritical;
+        posture.patchPendingUpdates = this.lastPatchStatus.pendingUpdates;
+        posture.patchLastCheckedAt = this.lastPatchStatus.lastCheckedAt;
+      }
+
+      await this.reportingService.reportSecurityPosture(this.config.deviceId, posture);
+    } catch (error: any) {
+      this.logger.error('Failed to report security posture', {
+        status: error.response?.status,
+        message: error.response?.data?.error || error.message,
         response: error.response?.data,
         error
       });
@@ -450,6 +553,25 @@ export class AgentService {
     }
   }
 
+  private async pollResponseActions(): Promise<void> {
+    if (!this.config.deviceId) {
+      this.logger.warn('Device not registered yet, skipping response actions polling');
+      return;
+    }
+
+    try {
+      await this.responseActionService.processPendingActions(this.config.deviceId);
+    } catch (error: any) {
+      this.logger.error('Failed to process response actions', {
+        status: error.response?.status,
+        message: error.response?.data?.error || error.message,
+        response: error.response?.data,
+        error,
+      });
+      throw error;
+    }
+  }
+
   private dedupeLogs(logs: DeviceLogItem[]): DeviceLogItem[] {
     const seen = new Set<string>();
     const out: DeviceLogItem[] = [];
@@ -462,6 +584,25 @@ export class AgentService {
       out.push(l);
     }
     return out;
+  }
+
+  private filterSecurityEventsBySeverity(events: SecurityEvent[]): SecurityEvent[] {
+    const rank = (severity: SecurityEvent['severity']): number => {
+      switch (severity) {
+        case 'critical':
+          return 4;
+        case 'error':
+          return 3;
+        case 'warning':
+          return 2;
+        case 'info':
+        default:
+          return 1;
+      }
+    };
+
+    const minRank = rank(this.config.securityEventsMinSeverity);
+    return events.filter((event) => rank(event.severity) >= minRank);
   }
 
   async collectFullReport(): Promise<DeviceReport> {

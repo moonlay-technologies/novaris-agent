@@ -12,16 +12,25 @@ export interface AgentConfig {
   softwareCollectionInterval: number; // number of report iterations between software collections
   collectPatchStatus: boolean;
   patchStatusInterval: number; // in seconds
+  collectSecurityPosture: boolean;
+  securityPostureInterval: number; // in seconds
   collectLogs: boolean;
   logsInterval: number; // in seconds
   logsMaxBatchSize: number;
   logsMinSeverity: 'info' | 'warning' | 'error' | 'critical';
   logsIncludeRaw: boolean;
+  collectSecurityEvents: boolean;
+  securityEventsMinSeverity: 'info' | 'warning' | 'error' | 'critical';
   logsCursor?: {
     last_collected_at?: string;
   };
   collectProcesses: boolean;
   processInterval: number; // in seconds
+  pollResponseActions: boolean;
+  responseActionsInterval: number; // in seconds
+  responseActionTimeout: number; // in seconds
+  remoteActionsEnabled: boolean;
+  responseActionsDryRun: boolean;
   logLevel: 'error' | 'warn' | 'info' | 'debug';
   logFile?: string;
   autoStart: boolean; // Whether to start agent automatically on system startup
@@ -38,13 +47,22 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   softwareCollectionInterval: 10, // collect software every 10 report iterations (approximately every 50 minutes if reportInterval is 5 minutes)
   collectPatchStatus: true,
   patchStatusInterval: 21600, // 6 hours
+  collectSecurityPosture: true,
+  securityPostureInterval: 21600, // 6 hours
   collectLogs: true,
   logsInterval: 300, // 5 minutes
   logsMaxBatchSize: 200,
   logsMinSeverity: 'warning',
   logsIncludeRaw: false,
+  collectSecurityEvents: true,
+  securityEventsMinSeverity: 'warning',
   collectProcesses: true,
   processInterval: 60, // 1 minute
+  pollResponseActions: true,
+  responseActionsInterval: 60, // 1 minute
+  responseActionTimeout: 30, // 30 seconds
+  remoteActionsEnabled: false,
+  responseActionsDryRun: true,
   logLevel: 'info',
   autoStart: false, // Auto-start disabled by default
 };

@@ -36,13 +36,22 @@ export function loadConfig(): AgentConfig {
         softwareCollectionInterval: 10,
         collectPatchStatus: true,
         patchStatusInterval: 21600,
+        collectSecurityPosture: true,
+        securityPostureInterval: 21600,
         collectLogs: true,
         logsInterval: 300,
         logsMaxBatchSize: 200,
         logsMinSeverity: 'warning',
         logsIncludeRaw: false,
+        collectSecurityEvents: true,
+        securityEventsMinSeverity: 'warning',
         collectProcesses: true,
         processInterval: 60,
+        pollResponseActions: true,
+        responseActionsInterval: 60,
+        responseActionTimeout: 30,
+        remoteActionsEnabled: false,
+        responseActionsDryRun: true,
         logLevel: 'info',
         autoStart: false
       };
@@ -105,6 +114,13 @@ export function loadConfig(): AgentConfig {
   if (process.env.NOVARIS_PATCH_STATUS_INTERVAL) {
     envConfig.patchStatusInterval = parseInt(process.env.NOVARIS_PATCH_STATUS_INTERVAL, 10);
   }
+  if (process.env.NOVARIS_COLLECT_SECURITY_POSTURE) {
+    const raw = process.env.NOVARIS_COLLECT_SECURITY_POSTURE.trim().toLowerCase();
+    envConfig.collectSecurityPosture = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_SECURITY_POSTURE_INTERVAL) {
+    envConfig.securityPostureInterval = parseInt(process.env.NOVARIS_SECURITY_POSTURE_INTERVAL, 10);
+  }
   if (process.env.NOVARIS_COLLECT_LOGS) {
     const raw = process.env.NOVARIS_COLLECT_LOGS.trim().toLowerCase();
     envConfig.collectLogs = raw === '1' || raw === 'true' || raw === 'yes';
@@ -125,12 +141,40 @@ export function loadConfig(): AgentConfig {
     const raw = process.env.NOVARIS_LOGS_INCLUDE_RAW.trim().toLowerCase();
     envConfig.logsIncludeRaw = raw === '1' || raw === 'true' || raw === 'yes';
   }
+  if (process.env.NOVARIS_COLLECT_SECURITY_EVENTS) {
+    const raw = process.env.NOVARIS_COLLECT_SECURITY_EVENTS.trim().toLowerCase();
+    envConfig.collectSecurityEvents = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_SECURITY_EVENTS_MIN_SEVERITY) {
+    const raw = process.env.NOVARIS_SECURITY_EVENTS_MIN_SEVERITY.trim().toLowerCase();
+    if (raw === 'info' || raw === 'warning' || raw === 'error' || raw === 'critical') {
+      envConfig.securityEventsMinSeverity = raw as AgentConfig['securityEventsMinSeverity'];
+    }
+  }
   if (process.env.NOVARIS_COLLECT_PROCESSES) {
     const raw = process.env.NOVARIS_COLLECT_PROCESSES.trim().toLowerCase();
     envConfig.collectProcesses = raw === '1' || raw === 'true' || raw === 'yes';
   }
   if (process.env.NOVARIS_PROCESS_INTERVAL) {
     envConfig.processInterval = parseInt(process.env.NOVARIS_PROCESS_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_POLL_RESPONSE_ACTIONS) {
+    const raw = process.env.NOVARIS_POLL_RESPONSE_ACTIONS.trim().toLowerCase();
+    envConfig.pollResponseActions = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_RESPONSE_ACTIONS_INTERVAL) {
+    envConfig.responseActionsInterval = parseInt(process.env.NOVARIS_RESPONSE_ACTIONS_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_RESPONSE_ACTION_TIMEOUT) {
+    envConfig.responseActionTimeout = parseInt(process.env.NOVARIS_RESPONSE_ACTION_TIMEOUT, 10);
+  }
+  if (process.env.NOVARIS_REMOTE_ACTIONS_ENABLED) {
+    const raw = process.env.NOVARIS_REMOTE_ACTIONS_ENABLED.trim().toLowerCase();
+    envConfig.remoteActionsEnabled = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_RESPONSE_ACTIONS_DRY_RUN) {
+    const raw = process.env.NOVARIS_RESPONSE_ACTIONS_DRY_RUN.trim().toLowerCase();
+    envConfig.responseActionsDryRun = raw === '1' || raw === 'true' || raw === 'yes';
   }
   if (process.env.NOVARIS_LOG_LEVEL) {
     envConfig.logLevel = process.env.NOVARIS_LOG_LEVEL as AgentConfig['logLevel'];

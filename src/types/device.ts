@@ -32,6 +32,23 @@ export interface PatchStatusReport {
   details: string | null;
 }
 
+export interface SecurityPostureReport {
+  collectedAt: Date;
+  antivirusInstalled: boolean;
+  antivirusEnabled: boolean;
+  antivirusUpToDate: boolean;
+  antivirusProductName: string | null;
+  firewallEnabled: boolean;
+  firewallProfile: string | null;
+  diskEncryptionEnabled: boolean;
+  diskEncryptionMethod: string | null;
+  diskEncryptionVolumes: Array<{ volume: string; encrypted: boolean }> | null;
+  patchMissingCritical?: boolean | null;
+  patchPendingUpdates?: number | null;
+  patchLastCheckedAt?: Date | null;
+  metadata?: Record<string, unknown> | null;
+}
+
 export type DeviceLogSeverity = 'info' | 'warning' | 'error' | 'critical';
 
 export interface DeviceLogItem {
@@ -49,6 +66,39 @@ export interface ProcessData {
   ramUsage: number; // percentage
   command: string | null;
   collectedAt: Date;
+}
+
+export interface SecurityEvent {
+  eventId: string;
+  eventType: string;
+  severity: DeviceLogSeverity;
+  source: string;
+  message: string;
+  collectedAt: Date;
+  payload?: Record<string, unknown> | null;
+}
+
+export type ResponseActionType =
+  | 'collect_diagnostics'
+  | 'kill_process'
+  | 'enable_firewall'
+  | 'isolate_network';
+
+export interface ResponseAction {
+  id: number;
+  actionType: ResponseActionType;
+  requestedAt: Date;
+  parameters?: Record<string, unknown> | null;
+  idempotencyKey?: string | null;
+}
+
+export interface ResponseActionExecutionResult {
+  actionId: number;
+  success: boolean;
+  startedAt: Date;
+  completedAt: Date;
+  message: string;
+  details?: Record<string, unknown> | null;
 }
 
 export interface DeviceReport {
