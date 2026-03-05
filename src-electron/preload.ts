@@ -13,6 +13,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // System info
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
 
+  // App/update info
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
+  downloadAndInstallUpdate: () => ipcRenderer.invoke('download-and-install-update'),
+
   // File operations
   openConfig: () => ipcRenderer.invoke('open-config'),
   openLogs: () => ipcRenderer.invoke('open-logs'),
@@ -20,6 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Event listeners
   onAgentStatusChanged: (callback: (event: any, data: any) => void) =>
     ipcRenderer.on('agent-status-changed', callback),
+
+  onUpdateDownloadProgress: (callback: (event: any, data: any) => void) =>
+    ipcRenderer.on('update-download-progress', callback),
 
   removeAllListeners: (event: string) =>
     ipcRenderer.removeAllListeners(event)

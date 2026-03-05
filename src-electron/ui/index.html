@@ -164,6 +164,57 @@
             border-top: 1px solid #e9ecef;
         }
 
+        .update-panel {
+            margin-bottom: 20px;
+            padding: 14px;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            text-align: left;
+            background: #f8f9fa;
+        }
+
+        .update-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .update-text {
+            font-size: 13px;
+            color: #555;
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+
+        .update-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn.secondary {
+            background-color: #6c757d;
+            color: white;
+            flex: 0 0 auto;
+            padding: 10px 14px;
+            font-size: 13px;
+        }
+
+        .btn.success {
+            background-color: #1a5a4d;
+            color: white;
+            flex: 0 0 auto;
+            padding: 10px 14px;
+            font-size: 13px;
+        }
+
+        .download-progress {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #1a5a4d;
+            display: none;
+        }
+
         .links a {
             color: #667eea;
             text-decoration: none;
@@ -226,13 +277,23 @@
                 Stop Agent
             </button>
         </div>
+
+        <div class="update-panel">
+            <div class="update-title">Application Update</div>
+            <div id="update-text" class="update-text">Checking for updates...</div>
+            <div class="update-actions">
+                <button id="check-update-btn" class="btn secondary">Check Update</button>
+                <button id="install-update-btn" class="btn success" disabled>Download & Install</button>
+            </div>
+            <div id="download-progress" class="download-progress">Downloading update...</div>
+        </div>
         
         <div class="links">
             <a href="#" id="open-config">Edit Config</a>
             <a href="#" id="open-logs">View Logs</a>
         </div>
 
-        <div class="version">Novaris Agent v0.0.1</div>
+        <div id="version-text" class="version">Novaris Agent v-</div>
     </div>
 
     <script>
@@ -254,6 +315,12 @@
         const stopSpinner = document.getElementById('stop-spinner');
         const openConfigLink = document.getElementById('open-config');
         const openLogsLink = document.getElementById('open-logs');
+        const checkUpdateBtn = document.getElementById('check-update-btn');
+        const installUpdateBtn = document.getElementById('install-update-btn');
+        const updateTextEl = document.getElementById('update-text');
+        const downloadProgressEl = document.getElementById('download-progress');
+        const versionTextEl = document.getElementById('version-text');
+        let latestUpdateInfo = null;
 
         // Initialize
         async function init() {
@@ -273,6 +340,8 @@
                 e.preventDefault();
                 api.openLogs();
             });
+            checkUpdateBtn.addEventListener('click', handleCheckUpdate);
+            installUpdateBtn.addEventListener('click', handleInstallUpdate);
 
             // Listen for status changes
             api.onAgentStatusChanged((event, data) => {
@@ -284,6 +353,22 @@
             setInterval(() => {
                 updateStatus();
             }, 10000);
+
+            api.onUpdateDownloadProgress((event, data) => {
+                if (typeof data?.percent === 'number') {
+                    downloadProgressEl.style.display = 'block';
+                    downloadProgressEl.textContent = `Downloading update... ${data.percent}%`;
+                }
+            });
+
+            try {
+                const versionInfo = await api.getAppVersion();
+                versionTextEl.textContent = `Novaris Agent v${versionInfo.version}`;
+            } catch (error) {
+                console.error('Failed to get app version:', error);
+            }
+
+            await handleCheckUpdate();
 
             // Get device info
             try {
@@ -376,6 +461,60 @@
                 stopBtn.disabled = false;
             } finally {
                 stopSpinner.style.display = 'none';
+            }
+        }
+
+        async function handleCheckUpdate() {
+            checkUpdateBtn.disabled = true;
+            updateTextEl.textContent = 'Checking for update...';
+
+            try {
+                const result = await api.checkForUpdate();
+                if (result.updateAvailable) {
+                    latestUpdateInfo = result.updateInfo;
+                    updateTextEl.textContent = `Update available: v${result.latestVersion} (current v${result.currentVersion})`;
+                    installUpdateBtn.disabled = false;
+                } else {
+                    latestUpdateInfo = null;
+                    installUpdateBtn.disabled = true;
+                    updateTextEl.textContent = result.message || `You are using latest version (v${result.currentVersion})`;
+                }
+            } catch (error) {
+                latestUpdateInfo = null;
+                installUpdateBtn.disabled = true;
+                updateTextEl.textContent = 'Failed to check updates. Please try again.';
+                console.error('Update check failed:', error);
+            } finally {
+                checkUpdateBtn.disabled = false;
+            }
+        }
+
+        async function handleInstallUpdate() {
+            if (!latestUpdateInfo) {
+                return;
+            }
+
+            installUpdateBtn.disabled = true;
+            checkUpdateBtn.disabled = true;
+            downloadProgressEl.style.display = 'block';
+            downloadProgressEl.textContent = 'Downloading update...';
+
+            try {
+                const result = await api.downloadAndInstallUpdate();
+                if (result.success) {
+                    updateTextEl.textContent = `Installer opened for v${result.version}. Complete installation to finish update.`;
+                } else {
+                    updateTextEl.textContent = result.message || 'Failed to install update.';
+                }
+            } catch (error) {
+                updateTextEl.textContent = 'Failed to install update.';
+                console.error('Install update failed:', error);
+            } finally {
+                checkUpdateBtn.disabled = false;
+                installUpdateBtn.disabled = false;
+                setTimeout(() => {
+                    downloadProgressEl.style.display = 'none';
+                }, 2500);
             }
         }
 

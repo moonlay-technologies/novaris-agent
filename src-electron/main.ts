@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, ipcMain, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import axios from 'axios';
 import { AgentService } from '../dist/services/agentService';
 import { loadConfig, saveConfig, getInstallDirectory } from '../dist/utils/config';
 import { AgentConfig, DEFAULT_CONFIG } from '../dist/types/config';
@@ -13,6 +14,207 @@ let tray: Tray | null = null;
 let agentService: AgentService | null = null;
 let isAgentRunning = false;
 let isQuitting = false;
+
+interface AgentUpdateInfo {
+  version: string;
+  downloadUrl: string;
+  releaseNotes: string | null;
+  osType: 'windows' | 'mac' | 'linux';
+  arch: string | null;
+  artifactType: string | null;
+  releasedAt: string;
+}
+
+let cachedUpdateInfo: AgentUpdateInfo | null = null;
+
+function getCurrentVersion(): string {
+  return app.getVersion();
+}
+
+function getOsType(): 'windows' | 'mac' | 'linux' {
+  if (process.platform === 'win32') {
+    return 'windows';
+  }
+
+  if (process.platform === 'darwin') {
+    return 'mac';
+  }
+
+  return 'linux';
+}
+
+function compareSemver(a: string, b: string): number {
+  const normalize = (value: string) => {
+    const [core] = value.split('-');
+    return core
+      .split('.')
+      .map((part) => parseInt(part, 10))
+      .map((part) => (Number.isNaN(part) ? 0 : part));
+  };
+
+  const aParts = normalize(a);
+  const bParts = normalize(b);
+  const maxLen = Math.max(aParts.length, bParts.length);
+
+  for (let index = 0; index < maxLen; index += 1) {
+    const aPart = aParts[index] || 0;
+    const bPart = bParts[index] || 0;
+
+    if (aPart > bPart) {
+      return 1;
+    }
+
+    if (aPart < bPart) {
+      return -1;
+    }
+  }
+
+  return 0;
+}
+
+async function fetchLatestRelease(): Promise<AgentUpdateInfo | null> {
+  let config: AgentConfig;
+
+  try {
+    config = loadConfig();
+  } catch (error: any) {
+    throw new Error(`Failed to load config for update check: ${error.message}`);
+  }
+
+  if (!config.apiUrl || !config.apiKey) {
+    throw new Error('apiUrl and apiKey are required to check updates');
+  }
+
+  const response = await axios.get(`${config.apiUrl}/agent-releases/latest-agent`, {
+    headers: {
+      'X-API-Key': config.apiKey,
+      'Content-Type': 'application/json',
+    },
+    params: {
+      os_type: getOsType(),
+      arch: process.arch,
+    },
+    timeout: 30000,
+  });
+
+  const payload = response.data?.data;
+  if (!payload) {
+    return null;
+  }
+
+  return {
+    version: payload.version,
+    downloadUrl: payload.download_url,
+    releaseNotes: payload.release_notes || null,
+    osType: payload.os_type,
+    arch: payload.arch || null,
+    artifactType: payload.artifact_type || null,
+    releasedAt: payload.released_at,
+  };
+}
+
+async function checkForUpdate() {
+  const latest = await fetchLatestRelease();
+  if (!latest) {
+    cachedUpdateInfo = null;
+    return {
+      updateAvailable: false,
+      currentVersion: getCurrentVersion(),
+      latestVersion: null,
+      updateInfo: null,
+      message: 'No release metadata available for this platform',
+    };
+  }
+
+  const currentVersion = getCurrentVersion();
+  const isNewer = compareSemver(latest.version, currentVersion) > 0;
+
+  cachedUpdateInfo = isNewer ? latest : null;
+
+  return {
+    updateAvailable: isNewer,
+    currentVersion,
+    latestVersion: latest.version,
+    updateInfo: latest,
+    message: isNewer ? 'Update available' : 'You are using the latest version',
+  };
+}
+
+async function downloadAndInstallUpdate() {
+  if (!cachedUpdateInfo) {
+    const checkResult = await checkForUpdate();
+    if (!checkResult.updateAvailable || !checkResult.updateInfo) {
+      return {
+        success: false,
+        message: checkResult.message,
+      };
+    }
+  }
+
+  const target = cachedUpdateInfo as AgentUpdateInfo;
+  const updatesDir = path.join(app.getPath('downloads'), 'NovarisAgentUpdates');
+  fs.mkdirSync(updatesDir, { recursive: true });
+
+  const parsedUrl = new URL(target.downloadUrl);
+  const candidateName = path.basename(parsedUrl.pathname);
+  const fallbackExt = getOsType() === 'windows' ? 'msi' : getOsType() === 'mac' ? 'dmg' : 'AppImage';
+  const fileName = candidateName && candidateName !== '/' ? candidateName : `novaris-agent-${target.version}.${fallbackExt}`;
+  const filePath = path.join(updatesDir, fileName);
+
+  const response = await axios.get(target.downloadUrl, {
+    responseType: 'stream',
+    timeout: 0,
+  });
+
+  const totalBytes = Number(response.headers['content-length'] || 0);
+  let downloadedBytes = 0;
+
+  await new Promise<void>((resolve, reject) => {
+    const writer = fs.createWriteStream(filePath);
+
+    response.data.on('data', (chunk: Buffer) => {
+      downloadedBytes += chunk.length;
+      if (mainWindow && totalBytes > 0) {
+        mainWindow.webContents.send('update-download-progress', {
+          percent: Math.min(100, Math.round((downloadedBytes / totalBytes) * 100)),
+        });
+      }
+    });
+
+    response.data.on('error', reject);
+    writer.on('error', reject);
+    writer.on('finish', resolve);
+
+    response.data.pipe(writer);
+  });
+
+  if (getOsType() !== 'windows') {
+    try {
+      fs.chmodSync(filePath, 0o755);
+    } catch (_error) {
+      // no-op; installer may still be opened successfully without chmod depending on platform/artifact
+    }
+  }
+
+  const openResult = await shell.openPath(filePath);
+  if (openResult) {
+    throw new Error(`Failed to open installer: ${openResult}`);
+  }
+
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Installer Opened',
+    message: 'Update installer has been opened',
+    detail: 'Follow the installer steps to complete update. You can close Novaris Agent once installation starts.',
+  });
+
+  return {
+    success: true,
+    message: 'Update downloaded and installer opened',
+    filePath,
+    version: target.version,
+  };
+}
 
 // Load config with error handling for GUI context
 let initialConfig: AgentConfig;
@@ -386,6 +588,40 @@ ipcMain.handle('get-agent-status', () => {
     status: isAgentRunning ? 'Running' : 'Stopped',
     online
   };
+});
+
+ipcMain.handle('get-app-version', () => {
+  return {
+    version: getCurrentVersion(),
+  };
+});
+
+ipcMain.handle('check-for-update', async () => {
+  try {
+    return await checkForUpdate();
+  } catch (error: any) {
+    logger.error('Failed to check for update', { error });
+    return {
+      updateAvailable: false,
+      currentVersion: getCurrentVersion(),
+      latestVersion: null,
+      updateInfo: null,
+      message: error.message || 'Failed to check updates',
+      error: true,
+    };
+  }
+});
+
+ipcMain.handle('download-and-install-update', async () => {
+  try {
+    return await downloadAndInstallUpdate();
+  } catch (error: any) {
+    logger.error('Failed to download/install update', { error });
+    return {
+      success: false,
+      message: error.message || 'Failed to download/update installer',
+    };
+  }
 });
 
 ipcMain.handle('start-agent', async () => {
