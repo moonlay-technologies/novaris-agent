@@ -13,6 +13,14 @@ export class SoftwareCollector {
     try {
       const softwareList: InstalledSoftware[] = [];
 
+      const siApps = await this.collectViaSystemInformation();
+      softwareList.push(...siApps);
+
+      if (softwareList.length > 0) {
+        this.logger.debug(`Collected ${softwareList.length} software items via systeminformation`);
+        return softwareList;
+      }
+
       // Get OS info to determine platform
       const osInfo = await si.osInfo();
       const platform = osInfo.platform.toLowerCase();
@@ -28,14 +36,73 @@ export class SoftwareCollector {
         this.logger.warn(`Unsupported platform for software collection: ${platform}`);
       }
 
-      this.logger.debug(`Collected ${softwareList.length} software items`);
-      return softwareList;
+      const deduped = this.dedupeSoftware(softwareList);
+      this.logger.debug(`Collected ${deduped.length} software items via fallback collectors`);
+      return deduped;
     } catch (error: any) {
       this.logger.error('Failed to collect software list', { 
         error: error.message || error 
       });
       return [];
     }
+  }
+
+  private async collectViaSystemInformation(): Promise<InstalledSoftware[]> {
+    try {
+      const appsFetcher = (si as any).apps;
+      if (typeof appsFetcher !== 'function') {
+        return [];
+      }
+
+      const apps: any[] = await appsFetcher();
+      if (!Array.isArray(apps) || apps.length === 0) {
+        return [];
+      }
+
+      const softwareList: InstalledSoftware[] = apps
+        .map((app: any) => {
+          const name = (app?.name || app?.app || '').toString().trim();
+          if (!name) {
+            return null;
+          }
+
+          let installedAt: Date | null = null;
+          const installDateCandidate = app?.installDate || app?.install_date || null;
+          if (installDateCandidate) {
+            const parsed = new Date(installDateCandidate);
+            if (!Number.isNaN(parsed.getTime())) {
+              installedAt = parsed;
+            }
+          }
+
+          return {
+            name,
+            version: app?.version ? String(app.version) : null,
+            installedAt,
+          } satisfies InstalledSoftware;
+        })
+        .filter((item: InstalledSoftware | null): item is InstalledSoftware => item !== null);
+
+      return this.dedupeSoftware(softwareList);
+    } catch (error: any) {
+      this.logger.warn('systeminformation apps collection failed, using fallback collectors', {
+        error: error.message || error,
+      });
+      return [];
+    }
+  }
+
+  private dedupeSoftware(softwareList: InstalledSoftware[]): InstalledSoftware[] {
+    const deduped = new Map<string, InstalledSoftware>();
+
+    for (const item of softwareList) {
+      const key = `${item.name.trim().toLowerCase()}::${(item.version || '').trim().toLowerCase()}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, item);
+      }
+    }
+
+    return Array.from(deduped.values());
   }
 
   private async collectWindowsSoftware(softwareList: InstalledSoftware[]): Promise<void> {

@@ -15,6 +15,19 @@ export interface InstalledSoftware {
   installedAt: Date | null;
 }
 
+export type ConnectedDeviceKind = 'usb' | 'bluetooth' | 'display' | 'printer' | 'network_neighbor';
+
+export interface ConnectedDevice {
+  kind: ConnectedDeviceKind;
+  identifier: string;
+  displayName: string;
+  vendor: string | null;
+  model: string | null;
+  serialNumber: string | null;
+  isConnected: boolean;
+  metadata?: Record<string, unknown> | null;
+}
+
 export interface HealthMetrics {
   cpuUsage: number; // percentage (overall CPU usage across all cores)
   cpuCores: number; // number of CPU cores
@@ -105,5 +118,6 @@ export interface DeviceReport {
   deviceInfo: DeviceInfo;
   healthMetrics: HealthMetrics;
   softwareList?: InstalledSoftware[]; // Optional: undefined means never collected, empty array means no software installed
+  connectedDevices?: ConnectedDevice[]; // Optional: undefined means feature disabled/not collected
 }
 

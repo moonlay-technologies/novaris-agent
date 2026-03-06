@@ -1,5 +1,6 @@
 import axios, { AxiosInstance } from 'axios';
 import {
+  ConnectedDevice,
   DeviceLogItem,
   DeviceReport,
   PatchStatusReport,
@@ -283,6 +284,14 @@ export class ReportingService {
             await this.syncSoftwareList(deviceId, report.softwareList);
           } catch (error) {
             this.logger.warn('Failed to sync software list', { error });
+          }
+        }
+
+        if (report.connectedDevices !== undefined) {
+          try {
+            await this.syncConnectedDevices(deviceId, report.connectedDevices);
+          } catch (error) {
+            this.logger.warn('Failed to sync connected devices', { error });
           }
         }
 
@@ -657,6 +666,31 @@ export class ReportingService {
         error: error.message,
         deviceId,
         softwareCount: softwareList.length 
+      });
+      throw error;
+    }
+  }
+
+  private async syncConnectedDevices(deviceId: number, connectedDevices: ConnectedDevice[]): Promise<void> {
+    try {
+      await this.apiClient.post(`/devices/${deviceId}/connected-devices/sync`, {
+        connected_devices: connectedDevices.map((item) => ({
+          kind: item.kind,
+          identifier: item.identifier,
+          display_name: item.displayName,
+          vendor: item.vendor || undefined,
+          model: item.model || undefined,
+          serial_number: item.serialNumber || undefined,
+          is_connected: item.isConnected,
+          metadata: item.metadata || undefined,
+        })),
+      });
+      this.logger.debug(`Synced ${connectedDevices.length} connected devices via bulk sync`);
+    } catch (error: any) {
+      this.logger.error('Failed to sync connected devices', {
+        error: error.message,
+        deviceId,
+        connectedDeviceCount: connectedDevices.length,
       });
       throw error;
     }

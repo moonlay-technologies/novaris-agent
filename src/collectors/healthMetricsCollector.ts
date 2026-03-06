@@ -41,98 +41,52 @@ export class HealthMetricsCollector {
     try {
       let cpuUsage = 0;
       let cpuCores = 1;
-      let methodUsed = 'none';
 
-      const os = require('os');
-      const platform = os.platform();
-
-      this.logger.info('Starting CPU usage collection', { platform });
-
-      // Method 1: Try Windows-specific CPU usage via PowerShell
-      if (platform === 'win32') {
-        try {
-          this.logger.info('Attempting Windows-specific CPU collection');
-          const windowsUsage = await this.getWindowsCpuUsage();
-          if (windowsUsage !== null) {
-            cpuUsage = windowsUsage;
-            methodUsed = 'windows';
-            // this.logger.info('Windows CPU method succeeded', {
-            //   usage: cpuUsage,
-            //   method: methodUsed
-            // });
-          } else {
-            this.logger.warn('Windows CPU method returned null');
-          }
-        } catch (error) {
-          this.logger.warn('Windows CPU usage failed', { error });
-        }
+      try {
+        const cpuData = await si.currentLoad();
+        const loadBasedUsage = cpuData.currentLoad || 0;
+        const idleBasedUsage = 100 - (cpuData.currentLoadIdle || 0);
+        cpuUsage = Math.max(loadBasedUsage, idleBasedUsage);
+        cpuCores = cpuData.cpus?.length || cpuCores;
+      } catch (error) {
+        this.logger.warn('Failed to get CPU load from systeminformation', { error });
       }
 
-      // Method 2: Fallback to systeminformation
-      if (cpuUsage === 0) {
-        try {
-          // this.logger.info('Attempting systeminformation CPU collection');
-          const cpuData = await si.currentLoad();
-          const loadBasedUsage = cpuData.currentLoad || 0;
-          const idleBasedUsage = 100 - (cpuData.currentLoadIdle || 0);
-
-          // this.logger.info('Systeminformation raw data', {
-          //   currentLoad: cpuData.currentLoad,
-          //   currentLoadIdle: cpuData.currentLoadIdle,
-          //   currentLoadUser: cpuData.currentLoadUser,
-          //   currentLoadSystem: cpuData.currentLoadSystem,
-          //   cpusLength: cpuData.cpus?.length
-          // });
-
-          cpuUsage = Math.max(loadBasedUsage, idleBasedUsage);
-          cpuCores = cpuData.cpus?.length || 1;
-          methodUsed = 'systeminformation';
-
-          // this.logger.info('Systeminformation calculations', {
-          //   loadBasedUsage,
-          //   idleBasedUsage,
-          //   chosenUsage: cpuUsage,
-          //   chosenCores: cpuCores
-          // });
-
-        } catch (error) {
-          this.logger.warn('Failed to get systeminformation CPU data', { error });
-        }
-      }
-
-      // Method 3: Get CPU cores from multiple sources (only if we haven't set cores yet)
-      if (cpuCores === 1) {
+      if (cpuCores <= 1) {
         try {
           const cpuInfo = await si.cpu();
-          const siCores = cpuInfo.cores || 1;
-          // this.logger.info('Systeminformation CPU cores', { cores: siCores });
-          cpuCores = Math.max(cpuCores, siCores);
+          cpuCores = Math.max(cpuCores, cpuInfo.cores || 1);
         } catch (error) {
-          this.logger.warn('Failed to get CPU cores from systeminformation', { error });
-        }
-
-        // Method 4: Fallback to Node.js os
-        try {
-          const osCores = os.cpus().length;
-          // this.logger.info('Node.js OS CPU cores', { cores: osCores });
-          cpuCores = Math.max(cpuCores, osCores);
-        } catch (error) {
-          this.logger.warn('Failed to get CPU cores from OS', { error });
+          this.logger.warn('Failed to get CPU core count from systeminformation', { error });
         }
       }
 
-      // Log the final result
-      // this.logger.info(`CPU Collection Complete: ${cpuUsage.toFixed(1)}% (${cpuCores} cores) via ${methodUsed}`);
+      if (cpuUsage === 0) {
+        const os = require('os');
+        if (os.platform() === 'win32') {
+          try {
+            const windowsUsage = await this.getWindowsCpuUsage();
+            if (windowsUsage !== null) {
+              cpuUsage = windowsUsage;
+            }
+          } catch (error) {
+            this.logger.warn('Windows CPU usage fallback failed', { error });
+          }
+        }
+      }
 
-      // Ensure reasonable bounds
-      const clampedUsage = Math.min(100, Math.max(0, cpuUsage));
-      if (clampedUsage !== cpuUsage) {
-        this.logger.warn('CPU usage was clamped', { original: cpuUsage, clamped: clampedUsage });
+      if (cpuCores <= 1) {
+        try {
+          const os = require('os');
+          cpuCores = Math.max(cpuCores, os.cpus().length);
+        } catch (error) {
+          this.logger.warn('Failed to get CPU cores from Node fallback', { error });
+        }
       }
 
       return {
-        usage: clampedUsage,
-        cores: cpuCores
+        usage: Math.min(100, Math.max(0, cpuUsage)),
+        cores: cpuCores,
       };
     } catch (error) {
       this.logger.error('Failed to collect CPU info', { error });

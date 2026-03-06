@@ -28,7 +28,33 @@ interface AgentUpdateInfo {
 let cachedUpdateInfo: AgentUpdateInfo | null = null;
 
 function getCurrentVersion(): string {
-  return app.getVersion();
+  const runtimeVersion = app.getVersion();
+
+  if (app.isPackaged) {
+    return runtimeVersion;
+  }
+
+  const candidatePackagePaths = [
+    path.resolve(__dirname, '../package.json'),
+    path.resolve(process.cwd(), 'package.json'),
+  ];
+
+  for (const packagePath of candidatePackagePaths) {
+    try {
+      if (!fs.existsSync(packagePath)) {
+        continue;
+      }
+
+      const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf-8'));
+      if (typeof pkg.version === 'string' && pkg.version.trim().length > 0) {
+        return pkg.version;
+      }
+    } catch (_error) {
+      // Try next candidate path
+    }
+  }
+
+  return runtimeVersion;
 }
 
 function getOsType(): 'windows' | 'mac' | 'linux' {
@@ -85,17 +111,27 @@ async function fetchLatestRelease(): Promise<AgentUpdateInfo | null> {
     throw new Error('apiUrl and apiKey are required to check updates');
   }
 
-  const response = await axios.get(`${config.apiUrl}/agent-releases/latest-agent`, {
-    headers: {
-      'X-API-Key': config.apiKey,
-      'Content-Type': 'application/json',
-    },
-    params: {
-      os_type: getOsType(),
-      arch: process.arch,
-    },
-    timeout: 30000,
-  });
+  let response;
+
+  try {
+    response = await axios.get(`${config.apiUrl}/agent-releases/latest-agent`, {
+      headers: {
+        'X-API-Key': config.apiKey,
+        'Content-Type': 'application/json',
+      },
+      params: {
+        os_type: getOsType(),
+        arch: process.arch,
+      },
+      timeout: 30000,
+    });
+  } catch (error: any) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
 
   const payload = response.data?.data;
   if (!payload) {

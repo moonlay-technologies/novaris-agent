@@ -1,10 +1,11 @@
 import * as os from 'os';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { SecurityPostureReport } from '../types/device';
 import { getLogger } from '../utils/logger';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const DEFAULT_POSTURE: Omit<SecurityPostureReport, 'collectedAt'> = {
   antivirusInstalled: false,
@@ -53,22 +54,45 @@ export class SecurityPostureCollector {
       $ErrorActionPreference = "Stop"
       $mp = $null
       try { $mp = Get-MpComputerStatus } catch {}
-      $fw = Get-NetFirewallProfile -PolicyStore ActiveStore | Select-Object Name, Enabled
-      $bl = Get-BitLockerVolume | Select-Object MountPoint, VolumeStatus, ProtectionStatus, EncryptionMethod
+      $avProducts = @()
+      try {
+        $avProducts = Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct |
+          Select-Object displayName, productState, pathToSignedProductExe
+      } catch {}
+      $fw = @()
+      try {
+        $fw = Get-NetFirewallProfile -PolicyStore ActiveStore | Select-Object Name, Enabled
+      } catch {}
+      $bl = @()
+      try {
+        $bl = Get-BitLockerVolume | Select-Object MountPoint, VolumeStatus, ProtectionStatus, EncryptionMethod
+      } catch {}
+      $tpm = $null
+      try { $tpm = Get-Tpm | Select-Object TpmPresent, TpmReady, ManagedAuthLevel } catch {}
+      $secureBoot = $null
+      try { $secureBoot = Confirm-SecureBootUEFI } catch {}
       $obj = [pscustomobject]@{
         antivirus_installed = ($mp -ne $null)
         antivirus_enabled = if ($mp) { [bool]$mp.AntivirusEnabled } else { $false }
         antivirus_up_to_date = if ($mp) { ($mp.AntivirusSignatureAge -le 7) } else { $false }
         antivirus_product = if ($mp) { 'Windows Defender' } else { $null }
+        defender_realtime = if ($mp) { [bool]$mp.RealTimeProtectionEnabled } else { $null }
+        defender_tamper = if ($mp) { [bool]$mp.IsTamperProtected } else { $null }
+        defender_signature_age_days = if ($mp) { [int]$mp.AntivirusSignatureAge } else { $null }
+        security_center_antivirus = $avProducts
         firewall_profiles = $fw | ForEach-Object { [pscustomobject]@{ name=$_.Name; enabled=[bool]$_.Enabled } }
         bitlocker = $bl | ForEach-Object { [pscustomobject]@{ volume=$_.MountPoint; volume_status=$_.VolumeStatus; protection_status=$_.ProtectionStatus; method=$_.EncryptionMethod } }
+        tpm_present = if ($tpm) { [bool]$tpm.TpmPresent } else { $null }
+        tpm_ready = if ($tpm) { [bool]$tpm.TpmReady } else { $null }
+        secure_boot_enabled = if ($secureBoot -ne $null) { [bool]$secureBoot } else { $null }
       }
       $obj | ConvertTo-Json -Compress
     `.trim();
-    const command = `powershell -NoProfile -Command "${psScript.replace(/"/g, '\\"')}"`;
-
     try {
-      const { stdout } = await execAsync(command, { timeout: 60000, maxBuffer: 2 * 1024 * 1024 });
+      const { stdout } = await execFileAsync('powershell', ['-NoProfile', '-Command', psScript], {
+        timeout: 60000,
+        maxBuffer: 2 * 1024 * 1024,
+      });
       const raw = (stdout || '').trim();
       const parsed = raw ? JSON.parse(raw) : null;
 
@@ -92,11 +116,38 @@ export class SecurityPostureCollector {
         bitlocker.find((b) => b.method && (String(b.protection_status || '').toLowerCase() === 'on'))?.method ||
         null;
 
+      const securityCenterProducts: Array<{ displayName?: string; productState?: number; pathToSignedProductExe?: string }> =
+        Array.isArray(parsed?.security_center_antivirus)
+          ? parsed.security_center_antivirus
+          : parsed?.security_center_antivirus
+          ? [parsed.security_center_antivirus]
+          : [];
+
+      const activeProducts = securityCenterProducts.filter((product) => this.isSecurityCenterAvActive(product.productState));
+      const upToDateProducts = securityCenterProducts.filter((product) => this.isSecurityCenterAvUpToDate(product.productState));
+      const productNames = securityCenterProducts
+        .map((product) => String(product.displayName || '').trim())
+        .filter((name) => !!name);
+
+      const defenderInstalled = Boolean(parsed?.antivirus_installed);
+      const antivirusInstalled = defenderInstalled || securityCenterProducts.length > 0;
+      const antivirusEnabled =
+        (defenderInstalled && Boolean(parsed?.antivirus_enabled)) ||
+        activeProducts.length > 0 ||
+        (!defenderInstalled && securityCenterProducts.length > 0);
+      const antivirusUpToDate =
+        (defenderInstalled && Boolean(parsed?.antivirus_up_to_date)) ||
+        upToDateProducts.length > 0 ||
+        (!defenderInstalled && securityCenterProducts.length > 0);
+
+      const antivirusProductName =
+        productNames.length > 0 ? productNames.join(', ') : parsed?.antivirus_product ?? null;
+
       return {
-        antivirusInstalled: Boolean(parsed?.antivirus_installed),
-        antivirusEnabled: Boolean(parsed?.antivirus_enabled),
-        antivirusUpToDate: Boolean(parsed?.antivirus_up_to_date),
-        antivirusProductName: parsed?.antivirus_product ?? null,
+        antivirusInstalled,
+        antivirusEnabled,
+        antivirusUpToDate,
+        antivirusProductName,
         firewallEnabled,
         firewallProfile: enabledProfiles.length ? enabledProfiles.join(', ') : null,
         diskEncryptionEnabled,
@@ -105,7 +156,17 @@ export class SecurityPostureCollector {
         patchMissingCritical: null,
         patchPendingUpdates: null,
         patchLastCheckedAt: null,
-        metadata: { platform: 'windows' },
+        metadata: {
+          platform: 'windows',
+          defender_realtime: parsed?.defender_realtime ?? null,
+          defender_tamper: parsed?.defender_tamper ?? null,
+          defender_signature_age_days: parsed?.defender_signature_age_days ?? null,
+          security_center_antivirus_count: securityCenterProducts.length,
+          security_center_antivirus_products: securityCenterProducts,
+          tpm_present: parsed?.tpm_present ?? null,
+          tpm_ready: parsed?.tpm_ready ?? null,
+          secure_boot_enabled: parsed?.secure_boot_enabled ?? null,
+        },
       };
     } catch (error: any) {
       this.logger.warn('Windows security posture collection failed', {
@@ -281,5 +342,27 @@ export class SecurityPostureCollector {
       this.logger.warn('Linux disk encryption detection failed', { error: error?.message || error });
       return { diskEncryptionEnabled: false, volumes: null };
     }
+  }
+
+  private isSecurityCenterAvActive(productState: unknown): boolean {
+    const state = Number(productState);
+    if (!Number.isFinite(state)) {
+      return false;
+    }
+
+    const stateHex = state.toString(16).padStart(6, '0');
+    const realtimeByte = stateHex.slice(2, 4).toUpperCase();
+    return realtimeByte === '10' || realtimeByte === '11';
+  }
+
+  private isSecurityCenterAvUpToDate(productState: unknown): boolean {
+    const state = Number(productState);
+    if (!Number.isFinite(state)) {
+      return false;
+    }
+
+    const stateHex = state.toString(16).padStart(6, '0');
+    const signatureByte = stateHex.slice(4, 6).toUpperCase();
+    return signatureByte === '00';
   }
 }

@@ -22,6 +22,32 @@ function classifyEventType(log: DeviceLogItem): string | null {
   }
 
   if (
+    text.includes('malware') ||
+    text.includes('virus') ||
+    text.includes('trojan') ||
+    text.includes('ransomware') ||
+    text.includes('threat detected')
+  ) {
+    return 'malware_detection';
+  }
+
+  if (
+    text.includes('antivirus disabled') ||
+    text.includes('real-time protection is off') ||
+    text.includes('defender disabled')
+  ) {
+    return 'antivirus_disabled';
+  }
+
+  if (
+    text.includes('firewall disabled') ||
+    text.includes('windows firewall has been turned off') ||
+    text.includes('ufw inactive')
+  ) {
+    return 'firewall_disabled';
+  }
+
+  if (
     text.includes('powershell') && (text.includes(' -enc ') || text.includes('encodedcommand')) ||
     text.includes('rundll32') ||
     text.includes('wget http') ||
@@ -37,6 +63,14 @@ function classifyEventType(log: DeviceLogItem): string | null {
     text.includes('token elevation')
   ) {
     return 'privilege_escalation_attempt';
+  }
+
+  if (
+    text.includes('account locked') ||
+    text.includes('user lockout') ||
+    text.includes('too many failed logon attempts')
+  ) {
+    return 'account_lockout';
   }
 
   return null;

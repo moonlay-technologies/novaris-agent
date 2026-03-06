@@ -13,6 +13,7 @@ import { PatchStatusCollector } from '../collectors/patchStatusCollector';
 import { SecurityPostureCollector } from '../collectors/securityPostureCollector';
 import { LogCollector } from '../collectors/logCollector';
 import { ProcessCollector } from '../collectors/processCollector';
+import { ConnectedDevicesCollector } from '../collectors/connectedDevicesCollector';
 import { ReportingService } from './reportingService';
 import { SecurityEventNormalizer } from './securityEventNormalizer';
 import { ResponseActionService } from './responseActionService';
@@ -27,6 +28,7 @@ export class AgentService {
   private securityPostureCollector: SecurityPostureCollector;
   private logCollector: LogCollector;
   private processCollector: ProcessCollector;
+  private connectedDevicesCollector: ConnectedDevicesCollector;
   private reportingService: ReportingService;
   private securityEventNormalizer: SecurityEventNormalizer;
   private responseActionService: ResponseActionService;
@@ -55,6 +57,9 @@ export class AgentService {
     this.securityPostureCollector = new SecurityPostureCollector();
     this.logCollector = new LogCollector();
     this.processCollector = new ProcessCollector();
+    this.connectedDevicesCollector = new ConnectedDevicesCollector({
+      includeNetworkNeighbors: config.collectNetworkNeighbors,
+    });
     this.reportingService = new ReportingService(config);
     this.securityEventNormalizer = new SecurityEventNormalizer();
     this.responseActionService = new ResponseActionService(config);
@@ -385,6 +390,7 @@ export class AgentService {
       const healthMetrics = await this.healthMetricsCollector.collect();
 
       let softwareList: DeviceReport['softwareList'] | undefined = this.lastSoftwareList;
+      let connectedDevices: DeviceReport['connectedDevices'] | undefined = undefined;
 
       // Increment software collection iteration counter
       this.softwareCollectionIteration++;
@@ -404,6 +410,10 @@ export class AgentService {
         this.logger.debug(`Using cached software data (iteration: ${this.softwareCollectionIteration}, ${softwareList?.length || 0} items, next collection at iteration ${nextCollection})`);
       }
 
+      if (this.config.collectConnectedDevices) {
+        connectedDevices = await this.connectedDevicesCollector.collect();
+      }
+
       if (!this.lastDeviceInfo) {
         this.lastDeviceInfo = await this.deviceInfoCollector.collect();
       }
@@ -412,6 +422,7 @@ export class AgentService {
         deviceInfo: this.lastDeviceInfo,
         healthMetrics,
         softwareList,
+        connectedDevices,
       };
 
       await this.reportingService.reportHealth(this.config.deviceId, report);

@@ -34,6 +34,8 @@ export function loadConfig(): AgentConfig {
         retryDelay: 1000,
         collectSoftware: true,
         softwareCollectionInterval: 10,
+        collectConnectedDevices: true,
+        collectNetworkNeighbors: false,
         collectPatchStatus: true,
         patchStatusInterval: 21600,
         collectSecurityPosture: true,
@@ -110,6 +112,14 @@ export function loadConfig(): AgentConfig {
   if (process.env.NOVARIS_COLLECT_PATCH_STATUS) {
     const raw = process.env.NOVARIS_COLLECT_PATCH_STATUS.trim().toLowerCase();
     envConfig.collectPatchStatus = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_COLLECT_CONNECTED_DEVICES) {
+    const raw = process.env.NOVARIS_COLLECT_CONNECTED_DEVICES.trim().toLowerCase();
+    envConfig.collectConnectedDevices = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_COLLECT_NETWORK_NEIGHBORS) {
+    const raw = process.env.NOVARIS_COLLECT_NETWORK_NEIGHBORS.trim().toLowerCase();
+    envConfig.collectNetworkNeighbors = raw === '1' || raw === 'true' || raw === 'yes';
   }
   if (process.env.NOVARIS_PATCH_STATUS_INTERVAL) {
     envConfig.patchStatusInterval = parseInt(process.env.NOVARIS_PATCH_STATUS_INTERVAL, 10);

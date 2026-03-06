@@ -10,6 +10,8 @@ export interface AgentConfig {
   retryDelay: number; // in milliseconds
   collectSoftware: boolean;
   softwareCollectionInterval: number; // number of report iterations between software collections
+  collectConnectedDevices: boolean;
+  collectNetworkNeighbors: boolean;
   collectPatchStatus: boolean;
   patchStatusInterval: number; // in seconds
   collectSecurityPosture: boolean;
@@ -45,6 +47,8 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   retryDelay: 1000, // 1 second
   collectSoftware: true,
   softwareCollectionInterval: 10, // collect software every 10 report iterations (approximately every 50 minutes if reportInterval is 5 minutes)
+  collectConnectedDevices: true,
+  collectNetworkNeighbors: false,
   collectPatchStatus: true,
   patchStatusInterval: 21600, // 6 hours
   collectSecurityPosture: true,

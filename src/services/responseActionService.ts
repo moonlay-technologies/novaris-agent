@@ -21,6 +21,7 @@ export class ResponseActionService {
   private apiClient: AxiosInstance;
   private logger = getLogger();
   private resultQueue: ResponseActionExecutionResult[] = [];
+  private hasLoggedMissingEndpoint = false;
 
   constructor(private config: AgentConfig) {
     this.apiClient = axios.create({
@@ -60,6 +61,14 @@ export class ResponseActionService {
 
         return rows.map((row: any) => this.toResponseAction(row));
       } catch (error: any) {
+        if (error.response?.status === 404) {
+          if (!this.hasLoggedMissingEndpoint) {
+            this.logger.info('Response actions endpoint not available; skipping polling');
+            this.hasLoggedMissingEndpoint = true;
+          }
+          return [];
+        }
+
         const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
         if (isNetworkError && attempt < maxRetries - 1) {
           const delay = this.config.retryDelay * Math.pow(2, attempt);
