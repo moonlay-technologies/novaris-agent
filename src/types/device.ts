@@ -59,6 +59,8 @@ export interface SecurityPostureReport {
   patchMissingCritical?: boolean | null;
   patchPendingUpdates?: number | null;
   patchLastCheckedAt?: Date | null;
+  softwareHackedIndicatorsCount?: number | null;
+  softwareMissingLicenseIndicatorsCount?: number | null;
   metadata?: Record<string, unknown> | null;
 }
 
@@ -95,7 +97,8 @@ export type ResponseActionType =
   | 'collect_diagnostics'
   | 'kill_process'
   | 'enable_firewall'
-  | 'isolate_network';
+  | 'isolate_network'
+  | 'restart_device';
 
 export interface ResponseAction {
   id: number;

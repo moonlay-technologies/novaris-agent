@@ -48,6 +48,17 @@ export class PatchStatusCollector {
         };
       }
 
+      if (platform === 'darwin') {
+        const { pendingUpdates, missingCritical, details } = await this.collectMacPatchStatus();
+        return {
+          os: osLabel || 'macOS',
+          pendingUpdates,
+          missingCritical,
+          lastCheckedAt,
+          details,
+        };
+      }
+
       this.logger.debug('Patch status collection not supported on this platform', { platform });
       return {
         os: osLabel || platform,
@@ -155,23 +166,17 @@ export class PatchStatusCollector {
     // Best-effort implementation:
     // - pending updates: count upgradable packages (apt/dnf/yum)
     // - missing critical: attempts security-only count when possible, otherwise false + note in details
-    const has = async (bin: string) => {
-      try {
-        await execAsync(`command -v ${bin}`, { timeout: 10000 });
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    if (await has('apt-get')) {
+    if (await this.hasBinary('apt-get')) {
       return await this.collectDebianPatchStatus();
     }
-    if (await has('dnf')) {
+    if (await this.hasBinary('dnf')) {
       return await this.collectRhelPatchStatus('dnf');
     }
-    if (await has('yum')) {
+    if (await this.hasBinary('yum')) {
       return await this.collectRhelPatchStatus('yum');
+    }
+    if (await this.hasBinary('zypper')) {
+      return await this.collectZypperPatchStatus();
     }
 
     return {
@@ -196,12 +201,15 @@ export class PatchStatusCollector {
       // Heuristic: treat as "critical missing" if any line includes "security"
       const securityLines = instLines.filter((l) => l.toLowerCase().includes('security'));
       const missingCritical = securityLines.length > 0;
+      const rebootRequired = await this.isRebootRequiredLinux();
 
       const sample = instLines.slice(0, 20).join('\n');
       const details = truncateDetails(
         [
+          'package_manager=apt',
           `pending_updates=${pendingUpdates}`,
           `security_updates_detected=${securityLines.length}`,
+          `reboot_required=${rebootRequired}`,
           sample ? `sample_updates:\n${sample}` : 'sample_updates: (none)',
         ].join('\n')
       );
@@ -251,12 +259,16 @@ export class PatchStatusCollector {
         securityCount = 0;
       }
 
+      const rebootRequired = await this.isRebootRequiredLinux();
+
       const missingCritical = securityCount > 0;
       const sample = pkgLines.slice(0, 20).join('\n');
       const details = truncateDetails(
         [
+          `package_manager=${bin}`,
           `pending_updates=${pendingUpdates}`,
           `security_updates_detected=${securityCount}`,
+          `reboot_required=${rebootRequired}`,
           sample ? `sample_updates:\n${sample}` : 'sample_updates: (none)',
         ].join('\n')
       );
@@ -273,6 +285,137 @@ export class PatchStatusCollector {
         missingCritical: false,
         details: 'RHEL/Fedora patch status collection failed (best-effort).',
       };
+    }
+  }
+
+  private async collectZypperPatchStatus(): Promise<{
+    pendingUpdates: number;
+    missingCritical: boolean;
+    details: string | null;
+  }> {
+    try {
+      let stdout = '';
+      try {
+        const result = await execAsync('zypper --non-interactive list-updates', {
+          timeout: 60000,
+          maxBuffer: 2 * 1024 * 1024,
+        });
+        stdout = result.stdout || '';
+      } catch (error: any) {
+        stdout = error?.stdout || '';
+      }
+
+      const lines = stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+      const pkgLines = lines.filter((line) => /^v\s*\|/.test(line) || /^\w+\s*\|/.test(line));
+      const pendingUpdates = pkgLines.length;
+
+      const securityLines = pkgLines.filter((line) => /security/i.test(line));
+      const missingCritical = securityLines.length > 0;
+      const rebootRequired = await this.isRebootRequiredLinux();
+
+      const details = truncateDetails(
+        [
+          'package_manager=zypper',
+          `pending_updates=${pendingUpdates}`,
+          `security_updates_detected=${securityLines.length}`,
+          `reboot_required=${rebootRequired}`,
+          pkgLines.length
+            ? `sample_updates:\n${pkgLines.slice(0, 20).join('\n')}`
+            : 'sample_updates: (none)',
+        ].join('\n')
+      );
+
+      return {
+        pendingUpdates,
+        missingCritical,
+        details,
+      };
+    } catch (error: any) {
+      this.logger.warn('SUSE patch status collection failed', { error: error?.message || error });
+      return {
+        pendingUpdates: 0,
+        missingCritical: false,
+        details: 'SUSE patch status collection failed (best-effort).',
+      };
+    }
+  }
+
+  private async collectMacPatchStatus(): Promise<{
+    pendingUpdates: number;
+    missingCritical: boolean;
+    details: string | null;
+  }> {
+    try {
+      let stdout = '';
+      try {
+        const result = await execAsync('softwareupdate -l', {
+          timeout: 60000,
+          maxBuffer: 2 * 1024 * 1024,
+        });
+        stdout = result.stdout || '';
+      } catch (error: any) {
+        stdout = `${error?.stdout || ''}\n${error?.stderr || ''}`;
+      }
+
+      const lines = stdout.split('\n').map((line) => line.trim()).filter(Boolean);
+      const updateLines = lines.filter((line) => line.startsWith('*') || line.startsWith('-'));
+      const pendingUpdates = updateLines.length;
+      const securityLines = lines.filter((line) => /security|critical/i.test(line));
+      const missingCritical = securityLines.length > 0;
+
+      let rebootRequired = false;
+      try {
+        const rebootProbe = await execAsync("softwareupdate -l | grep -i 'restart'", {
+          timeout: 30000,
+          maxBuffer: 256 * 1024,
+        });
+        rebootRequired = Boolean((rebootProbe.stdout || '').trim());
+      } catch {
+        rebootRequired = lines.some((line) => /restart/i.test(line));
+      }
+
+      const details = truncateDetails(
+        [
+          'package_manager=softwareupdate',
+          `pending_updates=${pendingUpdates}`,
+          `security_updates_detected=${securityLines.length}`,
+          `reboot_required=${rebootRequired}`,
+          updateLines.length
+            ? `sample_updates:\n${updateLines.slice(0, 20).join('\n')}`
+            : 'sample_updates: (none)',
+        ].join('\n')
+      );
+
+      return {
+        pendingUpdates,
+        missingCritical,
+        details,
+      };
+    } catch (error: any) {
+      this.logger.warn('macOS patch status collection failed', { error: error?.message || error });
+      return {
+        pendingUpdates: 0,
+        missingCritical: false,
+        details: 'macOS patch status collection failed (best-effort).',
+      };
+    }
+  }
+
+  private async isRebootRequiredLinux(): Promise<boolean> {
+    try {
+      await execAsync('test -f /var/run/reboot-required', { timeout: 10000 });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async hasBinary(bin: string): Promise<boolean> {
+    try {
+      await execAsync(`command -v ${bin}`, { timeout: 10000 });
+      return true;
+    } catch {
+      return false;
     }
   }
 }

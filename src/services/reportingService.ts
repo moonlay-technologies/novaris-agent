@@ -413,6 +413,8 @@ export class ReportingService {
           patch_missing_critical: posture.patchMissingCritical ?? null,
           patch_pending_updates: posture.patchPendingUpdates ?? null,
           patch_last_checked_at: posture.patchLastCheckedAt?.toISOString() ?? null,
+          software_hacked_indicators_count: posture.softwareHackedIndicatorsCount ?? null,
+          software_missing_license_indicators_count: posture.softwareMissingLicenseIndicatorsCount ?? null,
           metadata: posture.metadata ?? null,
         };
 

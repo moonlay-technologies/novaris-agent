@@ -165,14 +165,21 @@ export class ResponseActionService {
       const details = await this.executeAllowlistedAction(action);
       return this.buildResult(action.id, startedAt, true, 'Action executed successfully.', details);
     } catch (error: any) {
-      return this.buildResult(action.id, startedAt, false, `Action execution failed: ${error.message || error}`, {
-        action_type: action.actionType,
-      });
+      return this.buildResult(
+        action.id,
+        startedAt,
+        false,
+        this.humanizeExecutionError(error, action.actionType),
+        {
+          action_type: action.actionType,
+          raw_error: this.extractCommandErrorDetails(error),
+        }
+      );
     }
   }
 
   private isAllowlisted(actionType: ResponseActionType): boolean {
-    return ['collect_diagnostics', 'kill_process', 'enable_firewall', 'isolate_network'].includes(actionType);
+    return ['collect_diagnostics', 'kill_process', 'enable_firewall', 'isolate_network', 'restart_device'].includes(actionType);
   }
 
   private async executeAllowlistedAction(action: ResponseAction): Promise<Record<string, unknown>> {
@@ -185,9 +192,46 @@ export class ResponseActionService {
         return this.enableFirewall();
       case 'isolate_network':
         throw new Error('isolate_network is blocked until an explicit network isolation policy is enabled.');
+      case 'restart_device':
+        return this.restartDevice(action.parameters);
       default:
         throw new Error(`Unsupported action type "${action.actionType}"`);
     }
+  }
+
+  private async restartDevice(parameters?: Record<string, unknown> | null): Promise<Record<string, unknown>> {
+    const platform = os.platform();
+    const rawDelay = Number(parameters?.delay_seconds);
+    const delaySeconds = Number.isFinite(rawDelay)
+      ? Math.max(0, Math.min(300, Math.floor(rawDelay)))
+      : 30;
+
+    let command = '';
+    if (platform === 'win32') {
+      command = `shutdown /r /t ${delaySeconds} /f`;
+    } else if (platform === 'linux') {
+      const minutes = Math.max(1, Math.ceil(delaySeconds / 60));
+      command = `shutdown -r +${minutes}`;
+    } else if (platform === 'darwin') {
+      const minutes = Math.max(1, Math.ceil(delaySeconds / 60));
+      command = `shutdown -r +${minutes}`;
+    } else {
+      throw new Error('restart_device is not supported on this OS');
+    }
+
+    const { stdout, stderr } = await execAsync(command, {
+      timeout: this.config.responseActionTimeout * 1000,
+      maxBuffer: 1024 * 1024,
+    });
+
+    return {
+      command,
+      platform,
+      delay_seconds: delaySeconds,
+      note: 'Restart command submitted. Device may go offline shortly.',
+      stdout: truncateOutput(stdout || ''),
+      stderr: truncateOutput(stderr || ''),
+    };
   }
 
   private async killProcess(parameters?: Record<string, unknown> | null): Promise<Record<string, unknown>> {
@@ -221,27 +265,82 @@ export class ResponseActionService {
 
   private async enableFirewall(): Promise<Record<string, unknown>> {
     const platform = os.platform();
-    let command = '';
-
     if (platform === 'win32') {
-      command = 'netsh advfirewall set allprofiles state on';
-    } else if (platform === 'linux') {
-      command = 'if command -v ufw >/dev/null 2>&1; then ufw --force enable; else echo "ufw not installed"; fi';
-    } else {
-      throw new Error('enable_firewall is not supported on this OS');
+      // Try legacy netsh first, then PowerShell cmdlet as fallback.
+      const candidates = [
+        'netsh advfirewall set allprofiles state on',
+        'powershell -NoProfile -Command "Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True"',
+      ];
+
+      let lastError: unknown = null;
+      for (const command of candidates) {
+        try {
+          const { stdout, stderr } = await execAsync(command, {
+            timeout: this.config.responseActionTimeout * 1000,
+            maxBuffer: 1024 * 1024,
+          });
+
+          return {
+            command,
+            stdout: truncateOutput(stdout || ''),
+            stderr: truncateOutput(stderr || ''),
+            platform,
+          };
+        } catch (error) {
+          lastError = error;
+        }
+      }
+
+      const details = this.extractCommandErrorDetails(lastError);
+      throw new Error(
+        `Failed to enable firewall on Windows. ${details} This action may require running the agent with administrator privileges.`
+      );
     }
 
-    const { stdout, stderr } = await execAsync(command, {
-      timeout: this.config.responseActionTimeout * 1000,
-      maxBuffer: 1024 * 1024,
-    });
+    if (platform === 'linux') {
+      const command = 'if command -v ufw >/dev/null 2>&1; then ufw --force enable; else echo "ufw not installed"; fi';
+      const { stdout, stderr } = await execAsync(command, {
+        timeout: this.config.responseActionTimeout * 1000,
+        maxBuffer: 1024 * 1024,
+      });
 
-    return {
-      command,
-      stdout: truncateOutput(stdout || ''),
-      stderr: truncateOutput(stderr || ''),
-      platform,
-    };
+      return {
+        command,
+        stdout: truncateOutput(stdout || ''),
+        stderr: truncateOutput(stderr || ''),
+        platform,
+      };
+    }
+
+    throw new Error('enable_firewall is not supported on this OS');
+  }
+
+  private extractCommandErrorDetails(error: unknown): string {
+    const err = error as { message?: string; code?: string; stderr?: string; stdout?: string } | null;
+    if (!err) {
+      return 'Unknown command error.';
+    }
+
+    const message = err.message || 'Command failed.';
+    const stderr = err.stderr ? ` stderr=${truncateOutput(err.stderr)}` : '';
+    const stdout = err.stdout ? ` stdout=${truncateOutput(err.stdout)}` : '';
+    const code = err.code ? ` code=${String(err.code)}` : '';
+
+    return `${message}${code}${stderr}${stdout}`.trim();
+  }
+
+  private humanizeExecutionError(error: unknown, actionType: ResponseActionType): string {
+    const raw = this.extractCommandErrorDetails(error);
+
+    if (/access is denied|permission denied|system error\s*5/i.test(raw)) {
+      return `Action execution failed: ${actionType} requires administrator privileges. Restart Novaris Agent as Administrator and retry.`;
+    }
+
+    if (/not recognized|enoent|not found/i.test(raw)) {
+      return 'Action execution failed: required system command is not available on this device.';
+    }
+
+    return `Action execution failed: ${raw}`;
   }
 
   private collectDiagnostics(): Record<string, unknown> {

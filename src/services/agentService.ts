@@ -14,6 +14,7 @@ import { SecurityPostureCollector } from '../collectors/securityPostureCollector
 import { LogCollector } from '../collectors/logCollector';
 import { ProcessCollector } from '../collectors/processCollector';
 import { ConnectedDevicesCollector } from '../collectors/connectedDevicesCollector';
+import { SoftwareRiskAssessment, SoftwareRiskCollector } from '../collectors/softwareRiskCollector';
 import { ReportingService } from './reportingService';
 import { SecurityEventNormalizer } from './securityEventNormalizer';
 import { ResponseActionService } from './responseActionService';
@@ -21,6 +22,8 @@ import { getLogger } from '../utils/logger';
 import { saveConfig } from '../utils/config';
 
 export class AgentService {
+  private static readonly PATCH_DETAILS_MAX_CHARS = 6000;
+
   private deviceInfoCollector: DeviceInfoCollector;
   private softwareCollector: SoftwareCollector;
   private healthMetricsCollector: HealthMetricsCollector;
@@ -29,6 +32,7 @@ export class AgentService {
   private logCollector: LogCollector;
   private processCollector: ProcessCollector;
   private connectedDevicesCollector: ConnectedDevicesCollector;
+  private softwareRiskCollector: SoftwareRiskCollector;
   private reportingService: ReportingService;
   private securityEventNormalizer: SecurityEventNormalizer;
   private responseActionService: ResponseActionService;
@@ -48,6 +52,7 @@ export class AgentService {
   private lastLogsCursorAt: Date | null = null;
   private softwareCollectionIteration: number = 0;
   private lastSoftwareList: DeviceReport['softwareList'] | undefined = undefined;
+  private lastSoftwareRiskAssessment: SoftwareRiskAssessment | null = null;
 
   constructor(private config: AgentConfig) {
     this.deviceInfoCollector = new DeviceInfoCollector();
@@ -60,6 +65,7 @@ export class AgentService {
     this.connectedDevicesCollector = new ConnectedDevicesCollector({
       includeNetworkNeighbors: config.collectNetworkNeighbors,
     });
+    this.softwareRiskCollector = new SoftwareRiskCollector();
     this.reportingService = new ReportingService(config);
     this.securityEventNormalizer = new SecurityEventNormalizer();
     this.responseActionService = new ResponseActionService(config);
@@ -405,6 +411,7 @@ export class AgentService {
         this.logger.info(`Collecting software data (iteration: ${this.softwareCollectionIteration})`);
         softwareList = await this.softwareCollector.collect();
         this.lastSoftwareList = softwareList; // Cache the collected software list
+        this.lastSoftwareRiskAssessment = this.softwareRiskCollector.collect(softwareList || []);
       } else if (this.config.collectSoftware && this.lastSoftwareList !== undefined) {
         const nextCollection = Math.ceil(this.softwareCollectionIteration / this.config.softwareCollectionInterval) * this.config.softwareCollectionInterval;
         this.logger.debug(`Using cached software data (iteration: ${this.softwareCollectionIteration}, ${softwareList?.length || 0} items, next collection at iteration ${nextCollection})`);
@@ -454,6 +461,11 @@ export class AgentService {
       }
 
       const status: PatchStatusReport = await this.patchStatusCollector.collect();
+
+      if (this.lastSoftwareRiskAssessment && this.lastSoftwareList && this.lastSoftwareList.length > 0) {
+        status.details = this.mergePatchAndSoftwareRiskDetails(status.details, this.lastSoftwareRiskAssessment);
+      }
+
       await this.reportingService.reportPatchStatus(this.config.deviceId, status);
       this.lastPatchStatusAt = new Date();
       this.lastPatchStatus = status;
@@ -527,6 +539,23 @@ export class AgentService {
         posture.patchMissingCritical = this.lastPatchStatus.missingCritical;
         posture.patchPendingUpdates = this.lastPatchStatus.pendingUpdates;
         posture.patchLastCheckedAt = this.lastPatchStatus.lastCheckedAt;
+      }
+
+      if (this.lastSoftwareRiskAssessment) {
+        posture.softwareHackedIndicatorsCount = this.lastSoftwareRiskAssessment.hackedIndicators.length;
+        posture.softwareMissingLicenseIndicatorsCount =
+          this.lastSoftwareRiskAssessment.missingLicenseIndicators.length;
+
+        posture.metadata = {
+          ...(posture.metadata ?? {}),
+          software_risk: {
+            checked_at: this.lastSoftwareRiskAssessment.checkedAt.toISOString(),
+            hacked_indicators_count: this.lastSoftwareRiskAssessment.hackedIndicators.length,
+            missing_license_indicators_count: this.lastSoftwareRiskAssessment.missingLicenseIndicators.length,
+            hacked_indicators_sample: this.lastSoftwareRiskAssessment.hackedIndicators.slice(0, 10),
+            missing_license_indicators_sample: this.lastSoftwareRiskAssessment.missingLicenseIndicators.slice(0, 10),
+          },
+        };
       }
 
       await this.reportingService.reportSecurityPosture(this.config.deviceId, posture);
@@ -634,6 +663,26 @@ export class AgentService {
 
   public getOnlineStatus(): boolean {
     return this.reportingService.getOnlineStatus();
+  }
+
+  private mergePatchAndSoftwareRiskDetails(
+    patchDetails: string | null,
+    riskAssessment: SoftwareRiskAssessment
+  ): string {
+    const detailsParts: string[] = [];
+
+    if (patchDetails && patchDetails.trim()) {
+      detailsParts.push(patchDetails.trim());
+    }
+
+    detailsParts.push(this.softwareRiskCollector.summarize(riskAssessment));
+
+    const merged = detailsParts.join('\n\n');
+    if (merged.length <= AgentService.PATCH_DETAILS_MAX_CHARS) {
+      return merged;
+    }
+
+    return `${merged.slice(0, AgentService.PATCH_DETAILS_MAX_CHARS)}\n... (truncated)`;
   }
 }
 
