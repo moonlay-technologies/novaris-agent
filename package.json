@@ -1,6 +1,6 @@
 {
   "name": "novaris-agent",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Novaris Device Monitoring Agent",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -41,7 +41,10 @@
       "category": "public.app-category.utilities"
     },
     "win": {
-      "target": "msi",
+      "target": [
+        "nsis",
+        "msiwrapped"
+      ],
       "sign": null,
       "icon": "src-electron/assets/app_icon.png"
     },
