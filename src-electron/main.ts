@@ -616,6 +616,12 @@ function updateUI(): void {
   }
 }
 
+function startAgentOnLaunch(): void {
+  startAgent().catch((error) => {
+    logger.error('Failed to auto-start agent on application launch', { error });
+  });
+}
+
 // IPC handlers
 ipcMain.handle('get-agent-status', () => {
   const online = agentService ? agentService.getOnlineStatus() : null;
@@ -807,6 +813,7 @@ app.whenReady().then(() => {
   createTray();
   createWindow();
   setupAutoStart();
+  startAgentOnLaunch();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

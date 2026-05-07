@@ -35,7 +35,7 @@ export interface AgentConfig {
   responseActionsDryRun: boolean;
   logLevel: 'error' | 'warn' | 'info' | 'debug';
   logFile?: string;
-  autoStart: boolean; // Whether to start agent automatically on system startup
+  autoStart: boolean; // Whether to launch the application automatically on system startup
 }
 
 export const DEFAULT_CONFIG: Partial<AgentConfig> = {
@@ -68,6 +68,6 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   remoteActionsEnabled: false,
   responseActionsDryRun: true,
   logLevel: 'info',
-  autoStart: false, // Auto-start disabled by default
+  autoStart: false, // Application startup at login disabled by default
 };
 
