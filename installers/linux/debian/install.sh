@@ -4,6 +4,8 @@
 
 set -e
 
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+
 SERVICE_NAME="novaris-agent"
 SERVICE_DISPLAY_NAME="Novaris Device Monitoring Agent"
 INSTALL_DIR="/opt/novaris/agent"
@@ -17,6 +19,8 @@ if [ "$EUID" -ne 0 ]; then
     echo "Error: This script must be run as root (use sudo)"
     exit 1
 fi
+
+"$SCRIPT_DIR/../../install-hermes.sh"
 
 # Create installation directory
 echo "Creating installation directory..."

@@ -8,12 +8,22 @@ import { AgentConfig, DEFAULT_CONFIG } from '../dist/types/config';
 import { createLogger } from '../dist/utils/logger';
 import { DeviceInfoCollector } from '../dist/collectors/deviceInfoCollector';
 import { HealthMetricsCollector } from '../dist/collectors/healthMetricsCollector';
+import { HermesBootstrapService } from '../dist/services/hermesBootstrapService';
+import { HermesRuntimePolicy } from './hermes/runtimePolicy';
+import { HermesProcessSupervisor } from './hermes/processSupervisor';
+import { HermesHeartbeatService } from './hermes/heartbeatService';
+import { HermesGatewayPlatform, HermesGatewayService } from './hermes/gatewayService';
+import { HermesChatService } from './hermes/chatService';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let agentService: AgentService | null = null;
 let isAgentRunning = false;
 let isQuitting = false;
+let hermesSupervisor: HermesProcessSupervisor | null = null;
+let hermesHeartbeat: HermesHeartbeatService | null = null;
+const hermesGatewayService = new HermesGatewayService();
+const hermesChatService = new HermesChatService();
 
 interface AgentUpdateInfo {
   version: string;
@@ -265,8 +275,8 @@ const logger = createLogger(initialConfig);
 function createWindow(): void {
   // Create the browser window
   mainWindow = new BrowserWindow({
-    width: 500,
-    height: 700,
+    width: 560,
+    height: 860,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -666,6 +676,108 @@ ipcMain.handle('download-and-install-update', async () => {
   }
 });
 
+ipcMain.handle('hermes-bootstrap', async (_event, installCode: string) => {
+  try {
+    const config = loadConfig();
+    if (!config.apiUrl) {
+      throw new Error('apiUrl must be configured before running the Hermes bootstrap flow');
+    }
+    if (!config.deviceId) {
+      throw new Error('This device has not been registered yet (missing deviceId)');
+    }
+
+    const hermesBootstrapService = new HermesBootstrapService();
+    const result = await hermesBootstrapService.bootstrap({
+      apiUrl: config.apiUrl,
+      installCode,
+      deviceId: config.deviceId,
+    });
+
+    if (result.skipManagedInstall) {
+      logger.info('Hermes managed installation skipped: existing local Hermes installation detected', {
+        installId: result.payload.installId,
+      });
+      await hermesSupervisor?.stop();
+      hermesHeartbeat?.stop();
+    } else {
+      const policy = HermesRuntimePolicy.fromBootstrap(result.payload);
+      hermesSupervisor = new HermesProcessSupervisor({
+        resourcesPath: process.resourcesPath,
+        userDataPath: app.getPath('userData'),
+        isPackaged: app.isPackaged,
+      });
+      const runtimeResult = hermesSupervisor.start(policy);
+      if (!runtimeResult.started) {
+        logger.warn('Hermes bootstrap completed but managed runtime did not start', runtimeResult);
+      }
+
+      hermesHeartbeat = new HermesHeartbeatService();
+      hermesHeartbeat.start(config.apiUrl, config.apiKey, policy);
+    }
+
+    return {
+      success: true,
+      skipManagedInstall: result.skipManagedInstall,
+      payload: result.payload,
+    };
+  } catch (error: any) {
+    logger.error('Hermes bootstrap failed', { error });
+    return {
+      success: false,
+      skipManagedInstall: false,
+      payload: null,
+      message: error.response?.data?.message || error.message || 'Hermes bootstrap failed',
+    };
+  }
+});
+
+ipcMain.handle('hermes-gateway-get-config', () => {
+  try {
+    return { success: true, config: hermesGatewayService.getConfig() };
+  } catch (error: any) {
+    logger.error('Failed to read Hermes gateway configuration', { error });
+    return { success: false, config: { platforms: {} }, message: error.message || 'Failed to read gateway configuration' };
+  }
+});
+
+ipcMain.handle('hermes-gateway-save-config', async (_event, config) => {
+  try {
+    return await hermesGatewayService.saveConfig(config);
+  } catch (error: any) {
+    logger.error('Failed to save Hermes gateway configuration', { error });
+    return { success: false, configured: [], hermesHome: '', message: error.message || 'Failed to save gateway configuration' };
+  }
+});
+
+ipcMain.handle('hermes-gateway-status', async () => hermesGatewayService.status());
+ipcMain.handle('hermes-gateway-start', async () => hermesGatewayService.start());
+ipcMain.handle('hermes-gateway-stop', async () => hermesGatewayService.stop());
+ipcMain.handle('hermes-gateway-restart', async () => hermesGatewayService.restart());
+ipcMain.handle('hermes-pairing-list', async () => hermesGatewayService.pairingList());
+ipcMain.handle('hermes-pairing-pending', async () => hermesGatewayService.pairingPending());
+ipcMain.handle('hermes-pairing-approve', async (_event, platform: HermesGatewayPlatform, code: string) => (
+  hermesGatewayService.approvePairing(platform, code)
+));
+ipcMain.handle('hermes-pairing-revoke', async (_event, platform: HermesGatewayPlatform, userId: string) => (
+  hermesGatewayService.revokePairing(platform, userId)
+));
+
+ipcMain.handle('hermes-chat-connect', async (_event, port?: number, token?: string) => {
+  try {
+    return await hermesChatService.connect(port || 8642, token);
+  } catch (error: any) {
+    return { success: false, message: error.message || 'Failed to connect to Hermes gateway' };
+  }
+});
+ipcMain.handle('hermes-chat-session-create', async () => hermesChatService.createSession());
+ipcMain.handle('hermes-chat-send', async (_event, text: string) => hermesChatService.sendMessage(text));
+ipcMain.handle('hermes-chat-respond', async (_event, type: 'approval' | 'secret' | 'sudo' | 'clarify', value: string, requestId?: string, sessionId?: string) =>
+  hermesChatService.respondToRequest(type, value, requestId, sessionId));
+ipcMain.handle('hermes-chat-disconnect', () => hermesChatService.disconnect());
+ipcMain.on('hermes-chat-listen', (event) => {
+  hermesChatService.setEventListener((chatEvent) => event.sender.send('hermes-chat-event', chatEvent));
+});
+
 ipcMain.handle('start-agent', async () => {
   console.log('IPC: start-agent called');
   try {
@@ -831,12 +943,19 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', async (event) => {
   isQuitting = true;
+
+  hermesHeartbeat?.stop();
+  hermesGatewayService.dispose();
+  hermesChatService.dispose();
   
   // Stop agent before quitting
   if (isAgentRunning && agentService) {
     event.preventDefault();
     await stopAgent();
+    await hermesSupervisor?.stop();
     app.quit();
+  } else {
+    await hermesSupervisor?.stop();
   }
 });
 
