@@ -4,6 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { getLogger } from '../../dist/utils/logger';
+import { HermesDetectorService } from '../../dist/services/hermesDetectorService';
 
 export type HermesGatewayPlatform = 'telegram' | 'discord' | 'slack' | 'whatsapp';
 
@@ -24,9 +25,14 @@ export interface HermesGatewayConfig {
 
 export interface HermesGatewayStatus {
   configured: HermesGatewayPlatform[];
+  installed: boolean;
+  ready: boolean;
   running: boolean;
   output: string;
   hermesHome: string;
+  executablePath: string | null;
+  version: string | null;
+  message: string;
 }
 
 export interface HermesGatewaySaveResult {
@@ -40,6 +46,7 @@ const SENSITIVE_KEYS = new Set(['token', 'api_key', 'secret', 'password', 'acces
 /** Manages the user's local Hermes gateway without exposing shell or filesystem access to the renderer. */
 export class HermesGatewayService {
   private readonly logger = getLogger();
+  private readonly detector = new HermesDetectorService();
   private readonly gatewayProcesses = new Set<ChildProcess>();
 
   getConfig(): HermesGatewayConfig {
@@ -84,12 +91,46 @@ export class HermesGatewayService {
 
   async status(): Promise<HermesGatewayStatus> {
     const config = this.readRawConfig();
-    const result = await this.runHermes(['gateway', 'status']);
+    const detection = this.detector.detect();
+    if (!detection.detected || !detection.executablePath) {
+      return {
+        configured: this.getConfiguredPlatforms(config),
+        installed: false,
+        ready: false,
+        running: false,
+        output: '',
+        hermesHome: detection.hermesHome,
+        executablePath: null,
+        version: null,
+        message: 'Hermes Agent was not found. Install Hermes or set HERMES_EXECUTABLE_PATH.',
+      };
+    }
+
+    const [versionResult, gatewayResult] = await Promise.all([
+      this.runHermes(['--version'], detection.executablePath),
+      this.runHermes(['gateway', 'status'], detection.executablePath),
+    ]);
+    const ready = versionResult.code === 0;
+    const running = ready
+      && gatewayResult.code === 0
+      && !/not running|stopped|inactive|failed/i.test(gatewayResult.output)
+      && /\brunning\b|\bactive\b/i.test(gatewayResult.output);
+    const version = this.extractVersion(versionResult.output);
+
     return {
       configured: this.getConfiguredPlatforms(config),
-      running: result.code === 0 && !/not running|stopped|inactive|failed/i.test(result.output),
-      output: this.redactText(result.output),
-      hermesHome: this.getHermesHome(),
+      installed: true,
+      ready,
+      running,
+      output: this.redactText(gatewayResult.output),
+      hermesHome: detection.hermesHome,
+      executablePath: detection.executablePath,
+      version,
+      message: !ready
+        ? this.redactText(versionResult.output || 'Hermes was found but could not be started.')
+        : running
+          ? `Hermes${version ? ` ${version}` : ''} and its gateway are ready.`
+          : `Hermes${version ? ` ${version}` : ''} is installed; its gateway is stopped.`,
     };
   }
 
@@ -277,12 +318,12 @@ export class HermesGatewayService {
 
   private resolveExecutable(): string {
     if (process.env.HERMES_EXECUTABLE_PATH) return process.env.HERMES_EXECUTABLE_PATH;
-    return process.platform === 'win32' ? 'hermes.cmd' : 'hermes';
+    return this.detector.detect().executablePath || 'hermes';
   }
 
-  private runHermes(args: string[]): Promise<{ code: number; output: string }> {
+  private runHermes(args: string[], executable = this.resolveExecutable()): Promise<{ code: number; output: string }> {
     return new Promise((resolve) => {
-      const child = execFile(this.resolveExecutable(), args, {
+      const child = execFile(executable, args, {
         cwd: this.getHermesHome(),
         env: { ...process.env, HERMES_HOME: this.getHermesHome() },
         timeout: 30000,
@@ -298,5 +339,11 @@ export class HermesGatewayService {
 
   private redactText(value: string): string {
     return value.replace(/(token|api[_-]?key|secret|password)\s*[:=]\s*[^\s,}]+/gi, '$1=********');
+  }
+
+  private extractVersion(output: string): string | null {
+    const plain = output.replace(/\u001b\[[0-9;]*m/g, '');
+    const match = plain.match(/Hermes Agent\s+v?([^\s]+)/i);
+    return match?.[1] || null;
   }
 }

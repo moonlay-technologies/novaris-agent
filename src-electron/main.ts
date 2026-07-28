@@ -12,8 +12,10 @@ import { HermesBootstrapService } from '../dist/services/hermesBootstrapService'
 import { HermesRuntimePolicy } from './hermes/runtimePolicy';
 import { HermesProcessSupervisor } from './hermes/processSupervisor';
 import { HermesHeartbeatService } from './hermes/heartbeatService';
+import { HermesCapabilityService } from './hermes/capabilityService';
 import { HermesGatewayPlatform, HermesGatewayService } from './hermes/gatewayService';
 import { HermesChatService } from './hermes/chatService';
+import { ProcessRegistryService } from '../dist/services/processRegistryService';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -22,8 +24,7 @@ let isAgentRunning = false;
 let isQuitting = false;
 let hermesSupervisor: HermesProcessSupervisor | null = null;
 let hermesHeartbeat: HermesHeartbeatService | null = null;
-const hermesGatewayService = new HermesGatewayService();
-const hermesChatService = new HermesChatService();
+let hermesCapability: HermesCapabilityService | null = null;
 
 interface AgentUpdateInfo {
   version: string;
@@ -271,12 +272,20 @@ try {
   initialConfig = { ...DEFAULT_CONFIG } as AgentConfig;
 }
 const logger = createLogger(initialConfig);
+// Services call getLogger() during construction, so instantiate them only after
+// the process-wide logger has been initialized.
+const hermesGatewayService = new HermesGatewayService();
+const hermesChatService = new HermesChatService();
+const processRegistry = new ProcessRegistryService(initialConfig.logFile);
+processRegistry.registerDefaults(initialConfig);
 
 function createWindow(): void {
   // Create the browser window
   mainWindow = new BrowserWindow({
-    width: 560,
-    height: 860,
+    width: 1180,
+    height: 760,
+    minWidth: 960,
+    minHeight: 640,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -289,7 +298,7 @@ function createWindow(): void {
     },
     resizable: true,
     minimizable: true,
-    maximizable: false,
+    maximizable: true,
     title: 'Novaris Agent',
     icon: process.env.NODE_ENV === 'development'
       ? path.join(__dirname, '../src-electron/assets/app_icon.png')
@@ -512,7 +521,7 @@ async function startAgent(): Promise<void> {
       return;
     }
 
-    agentService = new AgentService(config);
+    agentService = new AgentService(config, processRegistry);
     await agentService.start();
     isAgentRunning = true;
 
@@ -626,12 +635,6 @@ function updateUI(): void {
   }
 }
 
-function startAgentOnLaunch(): void {
-  startAgent().catch((error) => {
-    logger.error('Failed to auto-start agent on application launch', { error });
-  });
-}
-
 // IPC handlers
 ipcMain.handle('get-agent-status', () => {
   const online = agentService ? agentService.getOnlineStatus() : null;
@@ -640,6 +643,14 @@ ipcMain.handle('get-agent-status', () => {
     status: isAgentRunning ? 'Running' : 'Stopped',
     online
   };
+});
+
+ipcMain.handle('get-process-registry', () => {
+  return processRegistry.snapshot();
+});
+
+ipcMain.handle('get-agent-logs', (_event, lines?: number) => {
+  return processRegistry.readLogs(lines);
 });
 
 ipcMain.handle('get-app-version', () => {
@@ -713,6 +724,8 @@ ipcMain.handle('hermes-bootstrap', async (_event, installCode: string) => {
 
       hermesHeartbeat = new HermesHeartbeatService();
       hermesHeartbeat.start(config.apiUrl, config.apiKey, policy);
+      hermesCapability = new HermesCapabilityService();
+      hermesCapability.start(policy, hermesSupervisor);
     }
 
     return {
@@ -762,14 +775,15 @@ ipcMain.handle('hermes-pairing-revoke', async (_event, platform: HermesGatewayPl
   hermesGatewayService.revokePairing(platform, userId)
 ));
 
-ipcMain.handle('hermes-chat-connect', async (_event, port?: number, token?: string) => {
+ipcMain.handle('hermes-chat-connect', async () => {
   try {
-    return await hermesChatService.connect(port || 8642, token);
+    return await hermesChatService.connectLocal();
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to connect to Hermes gateway' };
+    return { success: false, message: error.message || 'Failed to start or connect to Hermes' };
   }
 });
 ipcMain.handle('hermes-chat-session-create', async () => hermesChatService.createSession());
+ipcMain.handle('hermes-chat-commands', async () => hermesChatService.listCommands());
 ipcMain.handle('hermes-chat-send', async (_event, text: string) => hermesChatService.sendMessage(text));
 ipcMain.handle('hermes-chat-respond', async (_event, type: 'approval' | 'secret' | 'sudo' | 'clarify', value: string, requestId?: string, sessionId?: string) =>
   hermesChatService.respondToRequest(type, value, requestId, sessionId));
@@ -925,7 +939,6 @@ app.whenReady().then(() => {
   createTray();
   createWindow();
   setupAutoStart();
-  startAgentOnLaunch();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

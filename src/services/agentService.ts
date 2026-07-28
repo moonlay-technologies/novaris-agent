@@ -20,6 +20,7 @@ import { SecurityEventNormalizer } from './securityEventNormalizer';
 import { ResponseActionService } from './responseActionService';
 import { getLogger } from '../utils/logger';
 import { saveConfig } from '../utils/config';
+import { ProcessRegistryService } from './processRegistryService';
 
 export class AgentService {
   private static readonly PATCH_DETAILS_MAX_CHARS = 6000;
@@ -53,8 +54,11 @@ export class AgentService {
   private softwareCollectionIteration: number = 0;
   private lastSoftwareList: DeviceReport['softwareList'] | undefined = undefined;
   private lastSoftwareRiskAssessment: SoftwareRiskAssessment | null = null;
+  private readonly processRegistry: ProcessRegistryService;
 
-  constructor(private config: AgentConfig) {
+  constructor(private config: AgentConfig, processRegistry?: ProcessRegistryService) {
+    this.processRegistry = processRegistry || new ProcessRegistryService(config.logFile);
+    this.registerProcesses();
     this.deviceInfoCollector = new DeviceInfoCollector();
     this.softwareCollector = new SoftwareCollector();
     this.healthMetricsCollector = new HealthMetricsCollector();
@@ -78,6 +82,7 @@ export class AgentService {
     }
 
     this.logger.info('Starting Novaris Agent...');
+    this.processRegistry.start('agent.lifecycle');
     this.isRunning = true;
 
     try {
@@ -104,6 +109,7 @@ export class AgentService {
       this.logger.info('Novaris Agent started successfully');
     } catch (error) {
       this.logger.error('Failed to start agent', { error });
+      this.processRegistry.fail('agent.lifecycle', error);
       this.isRunning = false;
       throw error;
     }
@@ -115,6 +121,7 @@ export class AgentService {
     }
 
     this.logger.info('Stopping Novaris Agent...');
+    this.processRegistry.start('agent.shutdown');
     this.isRunning = false;
 
     if (this.collectInterval) {
@@ -161,6 +168,16 @@ export class AgentService {
     await this.reportingService.processQueue();
 
     this.logger.info('Novaris Agent stopped');
+    this.processRegistry.complete('agent.shutdown');
+    this.processRegistry.complete('agent.lifecycle');
+  }
+
+  getProcessRegistry(): ProcessRegistryService {
+    return this.processRegistry;
+  }
+
+  private registerProcesses(): void {
+    this.processRegistry.registerDefaults(this.config);
   }
 
   private async registerOrFindDevice(): Promise<void> {
@@ -355,18 +372,31 @@ export class AgentService {
     this.logger.info(`Starting queue processing (interval: ${intervalSeconds}s)`);
 
     // Process immediately
-    this.reportingService.processQueue().catch((error) => {
+    this.processQueue().catch((error) => {
       this.logger.error('Initial queue processing failed', { error });
     });
 
     this.queueInterval = setInterval(() => {
-      this.reportingService.processQueue().catch((error) => {
+      this.processQueue().catch((error) => {
         this.logger.error('Queue processing failed', { error });
       });
     }, intervalSeconds * 1000);
   }
 
+  private async processQueue(): Promise<void> {
+    this.processRegistry.start('offline-queue.processing');
+    try {
+      await this.reportingService.processQueue();
+    } catch (error) {
+      this.processRegistry.fail('offline-queue.processing', error);
+      throw error;
+    } finally {
+      this.processRegistry.complete('offline-queue.processing');
+    }
+  }
+
   private async collectData(): Promise<void> {
+    this.processRegistry.start('device.collection');
     try {
       this.logger.debug('Collecting device data...');
 
@@ -378,8 +408,12 @@ export class AgentService {
       // Note: Device info doesn't change frequently, so we don't need to collect it every time
       // Software list also doesn't change frequently
     } catch (error) {
+      this.processRegistry.fail('device.collection', error);
       this.logger.error('Failed to collect device data', { error });
       throw error;
+    }
+    finally {
+      this.processRegistry.complete('device.collection');
     }
   }
 
@@ -389,6 +423,7 @@ export class AgentService {
       return;
     }
 
+    this.processRegistry.start('health.reporting');
     try {
       this.logger.debug('Collecting health metrics and preparing report...');
 
@@ -434,6 +469,7 @@ export class AgentService {
 
       await this.reportingService.reportHealth(this.config.deviceId, report);
     } catch (error: any) {
+      this.processRegistry.fail('health.reporting', error);
       this.logger.error('Failed to report data', {
         status: error.response?.status,
         message: error.response?.data?.error || error.message,
@@ -441,6 +477,8 @@ export class AgentService {
         error
       });
       throw error;
+    } finally {
+      this.processRegistry.complete('health.reporting');
     }
   }
 
@@ -450,6 +488,7 @@ export class AgentService {
       return;
     }
 
+    this.processRegistry.start('patch.reporting');
     try {
       // Avoid frequent repeats if interval misconfigured too low
       if (this.lastPatchStatusAt) {
@@ -470,6 +509,7 @@ export class AgentService {
       this.lastPatchStatusAt = new Date();
       this.lastPatchStatus = status;
     } catch (error: any) {
+      this.processRegistry.fail('patch.reporting', error);
       this.logger.error('Failed to report patch status', {
         status: error.response?.status,
         message: error.response?.data?.error || error.message,
@@ -477,6 +517,8 @@ export class AgentService {
         error
       });
       throw error;
+    } finally {
+      this.processRegistry.complete('patch.reporting');
     }
   }
 
@@ -486,6 +528,7 @@ export class AgentService {
       return;
     }
 
+    this.processRegistry.start('logs.reporting');
     try {
       const since = this.lastLogsCursorAt ? new Date(this.lastLogsCursorAt.getTime() - 5000) : undefined; // small overlap
 
@@ -515,6 +558,7 @@ export class AgentService {
       this.config.logsCursor = { last_collected_at: cursor.toISOString() };
       saveConfig({ logsCursor: this.config.logsCursor });
     } catch (error: any) {
+      this.processRegistry.fail('logs.reporting', error);
       console.log(error);
       this.logger.error('Failed to report logs', {
         status: error.response?.status,
@@ -523,6 +567,8 @@ export class AgentService {
         error
       });
       throw error;
+    } finally {
+      this.processRegistry.complete('logs.reporting');
     }
   }
 
@@ -532,6 +578,7 @@ export class AgentService {
       return;
     }
 
+    this.processRegistry.start('security-posture.reporting');
     try {
       const posture: SecurityPostureReport = await this.securityPostureCollector.collect();
 
@@ -560,6 +607,7 @@ export class AgentService {
 
       await this.reportingService.reportSecurityPosture(this.config.deviceId, posture);
     } catch (error: any) {
+      this.processRegistry.fail('security-posture.reporting', error);
       this.logger.error('Failed to report security posture', {
         status: error.response?.status,
         message: error.response?.data?.error || error.message,
@@ -567,6 +615,8 @@ export class AgentService {
         error
       });
       throw error;
+    } finally {
+      this.processRegistry.complete('security-posture.reporting');
     }
   }
 
@@ -576,6 +626,7 @@ export class AgentService {
       return;
     }
 
+    this.processRegistry.start('processes.reporting');
     try {
       const processes = await this.processCollector.collect();
       
@@ -583,6 +634,7 @@ export class AgentService {
         await this.reportingService.reportProcesses(this.config.deviceId, processes);
       }
     } catch (error: any) {
+      this.processRegistry.fail('processes.reporting', error);
       this.logger.error('Failed to report processes', {
         status: error.response?.status,
         message: error.response?.data?.error || error.message,
@@ -590,6 +642,8 @@ export class AgentService {
         error
       });
       throw error;
+    } finally {
+      this.processRegistry.complete('processes.reporting');
     }
   }
 
@@ -599,9 +653,11 @@ export class AgentService {
       return;
     }
 
+    this.processRegistry.start('response-actions.polling');
     try {
       await this.responseActionService.processPendingActions(this.config.deviceId);
     } catch (error: any) {
+      this.processRegistry.fail('response-actions.polling', error);
       this.logger.error('Failed to process response actions', {
         status: error.response?.status,
         message: error.response?.data?.error || error.message,
@@ -609,6 +665,8 @@ export class AgentService {
         error,
       });
       throw error;
+    } finally {
+      this.processRegistry.complete('response-actions.polling');
     }
   }
 

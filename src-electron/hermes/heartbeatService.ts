@@ -32,7 +32,8 @@ export class HermesHeartbeatService {
       { install_id: policy.installId },
       {
         headers: {
-          'X-API-Key': apiKey,
+          ...(policy.installToken ? { Authorization: `Bearer ${policy.installToken}` } : {}),
+          ...(!policy.installToken ? { 'X-API-Key': apiKey } : {}),
           'Content-Type': 'application/json',
         },
         timeout: 30000,

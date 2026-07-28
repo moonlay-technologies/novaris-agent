@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startAgent: () => ipcRenderer.invoke('start-agent'),
   stopAgent: () => ipcRenderer.invoke('stop-agent'),
   getAgentStatus: () => ipcRenderer.invoke('get-agent-status'),
+  getProcessRegistry: () => ipcRenderer.invoke('get-process-registry'),
+  getAgentLogs: (lines?: number) => ipcRenderer.invoke('get-agent-logs', lines),
+  getConfig: () => ipcRenderer.invoke('get-config'),
+  saveConfig: (config: unknown) => ipcRenderer.invoke('save-config', config),
 
   // System info
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
@@ -39,8 +43,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hermesPairingRevoke: (platform: string, userId: string) => ipcRenderer.invoke('hermes-pairing-revoke', platform, userId),
 
   // Hermes local gateway chat transport. Events are emitted as sanitized protocol payloads.
-  hermesChatConnect: (port?: number, token?: string) => ipcRenderer.invoke('hermes-chat-connect', port, token),
+  hermesChatConnect: () => ipcRenderer.invoke('hermes-chat-connect'),
   hermesChatCreateSession: () => ipcRenderer.invoke('hermes-chat-session-create'),
+  hermesChatCommands: () => ipcRenderer.invoke('hermes-chat-commands'),
   hermesChatSend: (text: string) => ipcRenderer.invoke('hermes-chat-send', text),
   hermesChatRespond: (type: 'approval' | 'secret' | 'sudo' | 'clarify', value: string, requestId?: string, sessionId?: string) =>
     ipcRenderer.invoke('hermes-chat-respond', type, value, requestId, sessionId),

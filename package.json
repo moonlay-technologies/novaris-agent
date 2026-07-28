@@ -1,6 +1,6 @@
 {
   "name": "novaris-agent",
-  "version": "1.0.1",
+  "version": "1.0.4",
   "description": "Novaris Device Monitoring Agent",
   "main": "dist-electron/main.js",
   "scripts": {
