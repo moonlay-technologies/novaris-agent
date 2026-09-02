@@ -110,7 +110,25 @@
         .controls {
             display: flex;
             gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .autostart-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
             margin-bottom: 30px;
+            font-size: 13px;
+            color: #666;
+        }
+
+        .autostart-row label {
+            cursor: pointer;
+        }
+
+        .autostart-row input:disabled + label {
+            opacity: 0.6;
+            cursor: default;
         }
 
         .btn {
@@ -419,6 +437,11 @@
             </button>
         </div>
 
+        <div class="autostart-row">
+            <input id="autostart-enabled" type="checkbox">
+            <label for="autostart-enabled">Start automatically in the background at login</label>
+        </div>
+
         <section class="gateway-panel" aria-labelledby="gateway-title">
             <h2 id="gateway-title">Hermes Gateway</h2>
             <p class="gateway-help">Configure Hermes messaging integrations without opening a terminal. Credentials stay in the local Hermes configuration and are never displayed after saving.</p>
@@ -517,6 +540,7 @@
         const stopBtn = document.getElementById('stop-btn');
         const startSpinner = document.getElementById('start-spinner');
         const stopSpinner = document.getElementById('stop-spinner');
+        const autoStartCheckbox = document.getElementById('autostart-enabled');
         const openConfigLink = document.getElementById('open-config');
         const openLogsLink = document.getElementById('open-logs');
         const checkUpdateBtn = document.getElementById('check-update-btn');
@@ -551,6 +575,8 @@
             // Setup event listeners
             startBtn.addEventListener('click', handleStart);
             stopBtn.addEventListener('click', handleStop);
+            autoStartCheckbox.addEventListener('change', handleAutoStartChange);
+            await refreshAutoStart();
             openConfigLink.addEventListener('click', (e) => {
                 e.preventDefault();
                 api.openConfig();
@@ -577,6 +603,8 @@
             api.onAgentStatusChanged((event, data) => {
                 console.log('Status changed:', data);
                 updateStatusDisplay(data.running, data.online);
+                // A first successful start turns background start on by itself
+                refreshAutoStart();
             });
 
             // Periodic refresh to keep network status updated
@@ -691,6 +719,40 @@
                 stopBtn.disabled = false;
             } finally {
                 stopSpinner.style.display = 'none';
+            }
+        }
+
+        // Show what the OS is actually set to do at login
+        async function refreshAutoStart() {
+            try {
+                const result = await api.getAutoStart();
+                autoStartCheckbox.checked = result.enabled === true;
+            } catch (error) {
+                console.error('Failed to read background start setting:', error);
+                autoStartCheckbox.disabled = true;
+            }
+        }
+
+        // Handle the background start toggle
+        async function handleAutoStartChange() {
+            const requested = autoStartCheckbox.checked;
+            autoStartCheckbox.disabled = true;
+
+            try {
+                const result = await api.setAutoStart(requested);
+
+                // Reflect the state the OS ended up in, not the click
+                autoStartCheckbox.checked = result.enabled === true;
+
+                if (!result.success) {
+                    alert('Failed to change background start: ' + (result.error || 'unknown error'));
+                }
+            } catch (error) {
+                console.error('Failed to change background start setting:', error);
+                alert('Failed to change background start: ' + error.message);
+                await refreshAutoStart();
+            } finally {
+                autoStartCheckbox.disabled = false;
             }
         }
 

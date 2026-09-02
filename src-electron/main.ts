@@ -467,6 +467,27 @@ function createTray(): void {
   }
 }
 
+/**
+ * Turns background start on the first time this device proves to be fully
+ * configured, which is the first time the agent actually starts. This covers
+ * every way a config can arrive - the installer, a hand-edited config.json or
+ * the UI - and stops as soon as the user has made their own choice.
+ */
+function enableAutoStartOnFirstRun(config: AgentConfig): void {
+  if (config.autoStart === true || config.autoStartUserManaged === true) {
+    return;
+  }
+
+  try {
+    saveConfig({ autoStart: true });
+    autoStartService.apply(true);
+    logger.info('Background start enabled: this device is configured');
+  } catch (error) {
+    // The agent is already running; failing to persist this is not fatal.
+    logger.error('Failed to enable background start', { error });
+  }
+}
+
 /** Reapplies the OS login item to match the persisted autoStart setting. */
 function setupAutoStart(): void {
   try {
@@ -522,7 +543,7 @@ async function startAgent(options: StartAgentOptions = {}): Promise<void> {
     } catch (error: any) {
       reportConfigProblem(
         'Agent Configuration Incomplete',
-        `Configuration error: ${error.message}\n\nPlease open the configuration section and set the required fields (API URL, API Key, and Asset Tag).`,
+        `${error.message}\n\nOpen the configuration and fill in the missing fields.`,
         silent
       );
       return;
@@ -543,6 +564,7 @@ async function startAgent(options: StartAgentOptions = {}): Promise<void> {
     isAgentRunning = true;
 
     logger.info('Agent started successfully');
+    enableAutoStartOnFirstRun(config);
     updateUI();
     updateTrayMenu();
 
@@ -838,10 +860,14 @@ ipcMain.handle('get-config', () => {
 
 ipcMain.handle('save-config', async (event, newConfig: Partial<AgentConfig>) => {
   try {
-    const currentConfig = loadConfig();
-    const updatedConfig = { ...currentConfig, ...newConfig };
-    saveConfig(updatedConfig);
-    logger.info('Configuration saved', { config: updatedConfig });
+    // saveConfig merges into the file on disk, so a still-incomplete config can
+    // be completed here rather than being rejected by loadConfig first. Only
+    // the field names are logged: the payload carries the API key.
+    saveConfig(newConfig);
+    logger.info('Configuration saved', { fields: Object.keys(newConfig) });
+
+    // Match the OS login item to the configuration that was just written
+    setupAutoStart();
 
     // Restart agent if it's running to apply new config
     if (isAgentRunning) {
@@ -853,6 +879,26 @@ ipcMain.handle('save-config', async (event, newConfig: Partial<AgentConfig>) => 
   } catch (error: any) {
     logger.error('Failed to save configuration', { error });
     return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-auto-start', () => {
+  // Reports what the OS will actually do, rather than what config asked for.
+  return { enabled: autoStartService.isEnabled() };
+});
+
+ipcMain.handle('set-auto-start', (_event, enabled: unknown) => {
+  const shouldEnable = enabled === true;
+
+  try {
+    // Recording the choice stops the first-run logic from overriding it later.
+    saveConfig({ autoStart: shouldEnable, autoStartUserManaged: true });
+    autoStartService.apply(shouldEnable);
+
+    return { success: true, enabled: autoStartService.isEnabled() };
+  } catch (error: any) {
+    logger.error('Failed to change background start setting', { error, enabled: shouldEnable });
+    return { success: false, enabled: autoStartService.isEnabled(), error: error.message };
   }
 });
 

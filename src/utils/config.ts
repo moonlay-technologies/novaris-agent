@@ -20,44 +20,51 @@ const ENV_CONFIG_FILE = process.env.NOVARIS_CONFIG_FILE || CONFIG_FILE;
 // Export install directory for use in other modules (like logger)
 export const getInstallDirectory = (): string => INSTALL_DIR;
 
+// The fields the agent cannot run without, in the order they are reported.
+const REQUIRED_FIELDS: ReadonlyArray<{
+  key: 'apiUrl' | 'apiKey' | 'assetTag';
+  label: string;
+  envVar: string;
+}> = [
+  { key: 'apiUrl', label: 'API URL', envVar: 'NOVARIS_API_URL' },
+  { key: 'apiKey', label: 'API Key', envVar: 'NOVARIS_API_KEY' },
+  { key: 'assetTag', label: 'Asset Tag', envVar: 'NOVARIS_ASSET_TAG' },
+];
+
+export interface ConfigValidationResult {
+  valid: boolean;
+  /** Readable names of the required fields that are still empty. */
+  missing: string[];
+  /** Ready to show explanation of what is missing, or null when valid. */
+  message: string | null;
+}
+
+/**
+ * Reports whether the device is configured well enough for the agent to run.
+ * Unlike loadConfig this never throws, so callers can treat "not configured
+ * yet" as an ordinary state rather than an error.
+ */
+export function validateConfig(config: Partial<AgentConfig>): ConfigValidationResult {
+  const empty = REQUIRED_FIELDS.filter((field) => !config[field.key]);
+
+  return {
+    valid: empty.length === 0,
+    missing: empty.map((field) => field.label),
+    message: empty.length === 0
+      ? null
+      : `${empty.map((field) => field.label).join(', ')} ${empty.length > 1 ? 'are' : 'is'} required. `
+        + `Set ${empty.map((field) => field.envVar).join(', ')} or the matching fields in config.json`,
+  };
+}
+
 export function loadConfig(): AgentConfig {
   // Create default config file if it doesn't exist
   if (!fs.existsSync(ENV_CONFIG_FILE)) {
     try {
-      const defaultConfigContent = {
-        apiUrl: 'http://localhost:3000/api/v1',
-        apiKey: '',
-        assetTag: '',
-        collectInterval: 300,
-        reportInterval: 300,
-        retryAttempts: 3,
-        retryDelay: 1000,
-        collectSoftware: true,
-        softwareCollectionInterval: 10,
-        collectConnectedDevices: true,
-        collectNetworkNeighbors: false,
-        collectPatchStatus: true,
-        patchStatusInterval: 21600,
-        collectSecurityPosture: true,
-        securityPostureInterval: 21600,
-        collectLogs: true,
-        logsInterval: 300,
-        logsMaxBatchSize: 200,
-        logsMinSeverity: 'warning',
-        logsIncludeRaw: false,
-        collectSecurityEvents: true,
-        securityEventsMinSeverity: 'warning',
-        collectProcesses: true,
-        processInterval: 60,
-        pollResponseActions: true,
-        responseActionsInterval: 60,
-        responseActionTimeout: 30,
-        remoteActionsEnabled: false,
-        responseActionsDryRun: true,
-        logLevel: 'info',
-        autoStart: false
-      };
-      
+      // Derived from the shared defaults so the two cannot drift apart. The
+      // required fields are seeded empty for the operator to fill in.
+      const defaultConfigContent = { ...DEFAULT_CONFIG, assetTag: '' };
+
       fs.writeFileSync(
         ENV_CONFIG_FILE, 
         JSON.stringify(defaultConfigContent, null, 2),
@@ -204,15 +211,10 @@ export function loadConfig(): AgentConfig {
     ...envConfig,
   } as AgentConfig;
 
-  // Validate required fields
-  if (!config.apiUrl) {
-    throw new Error('API URL is required. Set NOVARIS_API_URL environment variable or config.json');
-  }
-  if (!config.apiKey) {
-    throw new Error('API Key is required. Set NOVARIS_API_KEY environment variable or config.json');
-  }
-  if (!config.assetTag) {
-    throw new Error('Asset Tag is required. Set NOVARIS_ASSET_TAG environment variable or config.json');
+  // Validate required fields, naming all of them rather than one per attempt
+  const validation = validateConfig(config);
+  if (!validation.valid) {
+    throw new Error(validation.message as string);
   }
 
   return config;

@@ -64,9 +64,29 @@ Create a `config.json` file in the agent directory:
   "responseActionTimeout": 30,
   "remoteActionsEnabled": false,
   "responseActionsDryRun": true,
-  "logLevel": "info"
+  "logLevel": "info",
+  "autoStart": true
 }
 ```
+
+### Background Operation
+
+The desktop application registers itself as an OS login item and comes back up
+on its own after a reboot. A login-triggered launch stays in the system tray:
+it starts the agent without opening a window and without raising any dialog.
+
+`autoStart` is switched on automatically the first time the agent manages to
+start, which is the first time this device is genuinely configured. Whatever
+the source of the configuration - the installer, a hand-edited `config.json`
+or the desktop UI - the device begins reporting after every login from then on.
+
+Use the *Start automatically in the background at login* checkbox in the
+application to turn it off. That choice is recorded as
+`autoStartUserManaged: true` and is never overridden afterwards.
+
+Only one instance runs at a time. Launching the application while it is already
+resident in the tray brings its window forward instead of starting a second
+agent.
 
 Or use environment variables:
 
@@ -83,6 +103,7 @@ Or use environment variables:
 - `NOVARIS_RESPONSE_ACTION_TIMEOUT` - Response action command timeout in seconds
 - `NOVARIS_REMOTE_ACTIONS_ENABLED` - Enable real endpoint actions (defaults to false)
 - `NOVARIS_RESPONSE_ACTIONS_DRY_RUN` - Acknowledge actions without execution when true
+- `NOVARIS_AUTO_START` - Launch the application at login and run in the background (true/false)
 - `NOVARIS_LOG_LEVEL` - Log level (error, warn, info, debug)
 
 ## Development
