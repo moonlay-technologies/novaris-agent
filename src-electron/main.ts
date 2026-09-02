@@ -15,6 +15,7 @@ import { HermesHeartbeatService } from './hermes/heartbeatService';
 import { HermesGatewayPlatform, HermesGatewayService } from './hermes/gatewayService';
 import { HermesChatService } from './hermes/chatService';
 import { AutoStartService } from './startup/autoStartService';
+import { BackgroundServiceDetector, BackgroundServiceStatus } from './startup/backgroundServiceDetector';
 
 // The logger must be initialized before anything else in this module: the
 // services constructed below resolve it eagerly and cannot be built without it.
@@ -37,6 +38,14 @@ let hermesHeartbeat: HermesHeartbeatService | null = null;
 const hermesGatewayService = new HermesGatewayService();
 const hermesChatService = new HermesChatService();
 const autoStartService = new AutoStartService();
+const backgroundServiceDetector = new BackgroundServiceDetector();
+
+/**
+ * Set while the headless service installed by the platform installers is the
+ * one reporting for this device. The desktop agent then stays idle rather than
+ * doubling every metric the backend receives for the same asset tag.
+ */
+let backgroundService: BackgroundServiceStatus | null = null;
 
 /**
  * True when the OS launched us at login rather than a person. Such a launch
@@ -414,50 +423,56 @@ function createWindow(options: { startHidden?: boolean } = {}): void {
   });
 }
 
+/** Builds the tray menu and tooltip from the current agent status. */
+function buildTrayMenu(): { menu: Menu; tooltip: string } {
+  const status = buildAgentStatus();
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'Show Novaris Agent',
+      click: () => revealMainWindow()
+    },
+    { type: 'separator' },
+    {
+      label: `Status: ${status.status}`,
+      enabled: false
+    },
+    { type: 'separator' },
+    {
+      label: 'Start Agent',
+      click: () => startAgent(),
+      // The service owns reporting; starting here would double every metric
+      enabled: !status.running && !status.managedByService
+    },
+    {
+      label: 'Stop Agent',
+      click: () => stopAgent(),
+      enabled: status.running
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit();
+      }
+    }
+  ]);
+
+  return { menu, tooltip: `Novaris Agent - ${status.status}` };
+}
+
 function createTray(): void {
   // Create tray icon
   const iconPath = process.env.NODE_ENV === 'development'
     ? path.join(__dirname, '../src-electron/assets/favicon.png')
     : path.join(__dirname, 'assets/favicon.png');
-  
+
   try {
     tray = new Tray(iconPath);
 
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Show Novaris Agent',
-        click: () => revealMainWindow()
-      },
-      { type: 'separator' },
-      {
-        label: `Status: ${isAgentRunning ? 'Running' : 'Stopped'}`,
-        enabled: false
-      },
-      { type: 'separator' },
-      {
-        label: 'Start Agent',
-        click: () => startAgent(),
-        enabled: !isAgentRunning
-      },
-      {
-        label: 'Stop Agent',
-        click: () => stopAgent(),
-        enabled: isAgentRunning
-      },
-      { type: 'separator' },
-      {
-        label: 'Quit',
-        click: () => {
-          app.quit();
-        }
-      }
-    ]);
-
-    const tooltipText = isAgentRunning 
-      ? 'Novaris Agent - Running' 
-      : 'Novaris Agent - Stopped';
-    tray.setToolTip(tooltipText);
-    tray.setContextMenu(contextMenu);
+    const { menu, tooltip } = buildTrayMenu();
+    tray.setToolTip(tooltip);
+    tray.setContextMenu(menu);
 
     // Double-click tray icon to show window
     tray.on('double-click', () => revealMainWindow());
@@ -529,11 +544,28 @@ function reportConfigProblem(message: string, detail: string, silent: boolean): 
   }
 }
 
+/** True when the boot-time service is live and owns reporting for this device. */
+async function isReportingOwnedByService(): Promise<boolean> {
+  backgroundService = await backgroundServiceDetector.detect();
+  return backgroundService.running;
+}
+
 async function startAgent(options: StartAgentOptions = {}): Promise<void> {
   const silent = options.silent === true;
 
   try {
     if (isAgentRunning) {
+      return;
+    }
+
+    // Checked on every start, not just at launch: the service can be stopped
+    // or started at any point while this window is open.
+    if (await isReportingOwnedByService()) {
+      logger.info('Background service is reporting for this device, leaving the desktop agent idle', {
+        kind: backgroundService?.kind,
+      });
+      updateUI();
+      updateTrayMenu();
       return;
     }
 
@@ -565,13 +597,10 @@ async function startAgent(options: StartAgentOptions = {}): Promise<void> {
 
     logger.info('Agent started successfully');
     enableAutoStartOnFirstRun(config);
+
+    // updateUI already sends the complete status to the window
     updateUI();
     updateTrayMenu();
-
-    // Notify UI
-    if (mainWindow) {
-      mainWindow.webContents.send('agent-status-changed', { running: true });
-    }
   } catch (error: any) {
     logger.error('Failed to start agent', { error });
     
@@ -611,13 +640,10 @@ async function stopAgent(): Promise<void> {
     agentService = null;
 
     logger.info('Agent stopped successfully');
+
+    // updateUI already sends the complete status to the window
     updateUI();
     updateTrayMenu();
-
-    // Notify UI
-    if (mainWindow) {
-      mainWindow.webContents.send('agent-status-changed', { running: false });
-    }
   } catch (error: any) {
     logger.error('Failed to stop agent', { error });
   }
@@ -626,51 +652,27 @@ async function stopAgent(): Promise<void> {
 function updateTrayMenu(): void {
   if (!tray) return;
 
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show Novaris Agent',
-      click: () => revealMainWindow()
-    },
-    { type: 'separator' },
-    {
-      label: `Status: ${isAgentRunning ? 'Running' : 'Stopped'}`,
-      enabled: false
-    },
-    { type: 'separator' },
-    {
-      label: 'Start Agent',
-      click: () => startAgent(),
-      enabled: !isAgentRunning
-    },
-    {
-      label: 'Stop Agent',
-      click: () => stopAgent(),
-      enabled: isAgentRunning
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        app.quit();
-      }
-    }
-  ]);
-
-  const tooltipText = isAgentRunning 
-    ? 'Novaris Agent - Running' 
-    : 'Novaris Agent - Stopped';
+  const { menu: contextMenu, tooltip: tooltipText } = buildTrayMenu();
   tray.setToolTip(tooltipText);
   tray.setContextMenu(contextMenu);
 }
 
+/** The status shared by the window, the tray and the status IPC call. */
+function buildAgentStatus() {
+  const managedByService = backgroundService?.running === true;
+
+  return {
+    running: isAgentRunning,
+    status: isAgentRunning ? 'Running' : managedByService ? 'Running as a service' : 'Stopped',
+    online: agentService ? agentService.getOnlineStatus() : null,
+    managedByService,
+    serviceKind: managedByService ? backgroundService?.kind ?? null : null
+  };
+}
+
 function updateUI(): void {
   if (mainWindow) {
-    const online = agentService ? agentService.getOnlineStatus() : null;
-    mainWindow.webContents.send('agent-status-changed', {
-      running: isAgentRunning,
-      status: isAgentRunning ? 'Running' : 'Stopped',
-      online
-    });
+    mainWindow.webContents.send('agent-status-changed', buildAgentStatus());
   }
 }
 
@@ -681,13 +683,13 @@ function startAgentOnLaunch(): void {
 }
 
 // IPC handlers
-ipcMain.handle('get-agent-status', () => {
-  const online = agentService ? agentService.getOnlineStatus() : null;
-  return {
-    running: isAgentRunning,
-    status: isAgentRunning ? 'Running' : 'Stopped',
-    online
-  };
+ipcMain.handle('get-agent-status', async () => {
+  // Refreshed here so a window opened later reflects the service accurately
+  if (!isAgentRunning) {
+    await isReportingOwnedByService();
+  }
+
+  return buildAgentStatus();
 });
 
 ipcMain.handle('get-app-version', () => {

@@ -6,10 +6,24 @@ import { AgentConfig, DEFAULT_CONFIG } from '../types/config';
 // For packaged apps, this is the installation folder
 // For development, this is the project root
 const getInstallDir = (): string => {
+  // Explicit override, for deployments that place the config elsewhere
+  if (process.env.NOVARIS_INSTALL_DIR) {
+    return process.env.NOVARIS_INSTALL_DIR;
+  }
+
   if (process.env.NODE_ENV === 'development') {
     return process.cwd();
   }
-  // In production, use the directory containing the executable
+
+  // Started as a script under plain Node, which is how the background service
+  // runs: process.execPath is the Node binary itself, so the installation is
+  // the package root above this compiled file, not Node's own folder.
+  const executable = path.basename(process.execPath).toLowerCase();
+  if (executable === 'node' || executable === 'node.exe') {
+    return path.resolve(__dirname, '..', '..');
+  }
+
+  // Packaged application: the executable sits in the installation folder
   return path.dirname(process.execPath);
 };
 
