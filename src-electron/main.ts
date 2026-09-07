@@ -14,6 +14,19 @@ import { HermesProcessSupervisor } from './hermes/processSupervisor';
 import { HermesHeartbeatService } from './hermes/heartbeatService';
 import { HermesGatewayPlatform, HermesGatewayService } from './hermes/gatewayService';
 import { HermesChatService } from './hermes/chatService';
+import { AutoStartService } from './startup/autoStartService';
+import { BackgroundServiceDetector, BackgroundServiceStatus } from './startup/backgroundServiceDetector';
+
+// The logger must be initialized before anything else in this module: the
+// services constructed below resolve it eagerly and cannot be built without it.
+let initialConfig: AgentConfig;
+try {
+  initialConfig = loadConfig();
+} catch (error) {
+  console.warn('Config validation failed, using defaults', error);
+  initialConfig = { ...DEFAULT_CONFIG } as AgentConfig;
+}
+const logger = createLogger(initialConfig);
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -24,6 +37,25 @@ let hermesSupervisor: HermesProcessSupervisor | null = null;
 let hermesHeartbeat: HermesHeartbeatService | null = null;
 const hermesGatewayService = new HermesGatewayService();
 const hermesChatService = new HermesChatService();
+const autoStartService = new AutoStartService();
+const backgroundServiceDetector = new BackgroundServiceDetector();
+
+/**
+ * Set while the headless service installed by the platform installers is the
+ * one reporting for this device. The desktop agent then stays idle rather than
+ * doubling every metric the backend receives for the same asset tag.
+ */
+let backgroundService: BackgroundServiceStatus | null = null;
+
+/**
+ * True when the OS launched us at login rather than a person. Such a launch
+ * stays in the tray and never raises a dialog, since nobody is watching.
+ */
+const launchedInBackground = autoStartService.wasLaunchedInBackground();
+
+// Only one instance may own the agent runtime. Without this, a login-launched
+// instance plus a manual launch would both report for the same asset tag.
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 interface AgentUpdateInfo {
   version: string;
@@ -262,17 +294,21 @@ async function downloadAndInstallUpdate() {
   };
 }
 
-// Load config with error handling for GUI context
-let initialConfig: AgentConfig;
-try {
-  initialConfig = loadConfig();
-} catch (error) {
-  console.warn('Config validation failed, using defaults', error);
-  initialConfig = { ...DEFAULT_CONFIG } as AgentConfig;
-}
-const logger = createLogger(initialConfig);
+/** Brings the existing window forward, recreating it if it was disposed. */
+function revealMainWindow(): void {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore();
+    }
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
 
-function createWindow(): void {
+  createWindow();
+}
+
+function createWindow(options: { startHidden?: boolean } = {}): void {
   // Create the browser window
   mainWindow = new BrowserWindow({
     width: 560,
@@ -294,7 +330,7 @@ function createWindow(): void {
     icon: process.env.NODE_ENV === 'development'
       ? path.join(__dirname, '../src-electron/assets/app_icon.png')
       : path.join(__dirname, 'assets/app_icon.png'),
-    show: true // Show immediately for debugging
+    show: false // Revealed on ready-to-show, unless launched in the background
   });
 
   // Load the UI
@@ -351,6 +387,14 @@ function createWindow(): void {
   // Log when window is ready
   mainWindow.once('ready-to-show', () => {
     console.log('Window ready to show');
+
+    // A background launch keeps the window loaded but off screen, so the tray
+    // and the agent are live without interrupting whoever just logged in.
+    if (options.startHidden) {
+      logger.info('Launched in background, staying in the tray');
+      return;
+    }
+
     if (mainWindow) {
       mainWindow.show();
       mainWindow.focus();
@@ -379,97 +423,149 @@ function createWindow(): void {
   });
 }
 
+/** Builds the tray menu and tooltip from the current agent status. */
+function buildTrayMenu(): { menu: Menu; tooltip: string } {
+  const status = buildAgentStatus();
+
+  const menu = Menu.buildFromTemplate([
+    {
+      label: 'Show Novaris Agent',
+      click: () => revealMainWindow()
+    },
+    { type: 'separator' },
+    {
+      label: `Status: ${status.status}`,
+      enabled: false
+    },
+    { type: 'separator' },
+    {
+      label: 'Start Agent',
+      click: () => startAgent(),
+      // The service owns reporting; starting here would double every metric
+      enabled: !status.running && !status.managedByService
+    },
+    {
+      label: 'Stop Agent',
+      click: () => stopAgent(),
+      enabled: status.running
+    },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit();
+      }
+    }
+  ]);
+
+  return { menu, tooltip: `Novaris Agent - ${status.status}` };
+}
+
 function createTray(): void {
   // Create tray icon
   const iconPath = process.env.NODE_ENV === 'development'
     ? path.join(__dirname, '../src-electron/assets/favicon.png')
     : path.join(__dirname, 'assets/favicon.png');
-  
+
   try {
     tray = new Tray(iconPath);
 
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'Show Novaris Agent',
-        click: () => {
-          if (mainWindow) {
-            mainWindow.show();
-            mainWindow.focus();
-          } else {
-            createWindow();
-          }
-        }
-      },
-      { type: 'separator' },
-      {
-        label: `Status: ${isAgentRunning ? 'Running' : 'Stopped'}`,
-        enabled: false
-      },
-      { type: 'separator' },
-      {
-        label: 'Start Agent',
-        click: () => startAgent(),
-        enabled: !isAgentRunning
-      },
-      {
-        label: 'Stop Agent',
-        click: () => stopAgent(),
-        enabled: isAgentRunning
-      },
-      { type: 'separator' },
-      {
-        label: 'Quit',
-        click: () => {
-          app.quit();
-        }
-      }
-    ]);
-
-    const tooltipText = isAgentRunning 
-      ? 'Novaris Agent - Running' 
-      : 'Novaris Agent - Stopped';
-    tray.setToolTip(tooltipText);
-    tray.setContextMenu(contextMenu);
+    const { menu, tooltip } = buildTrayMenu();
+    tray.setToolTip(tooltip);
+    tray.setContextMenu(menu);
 
     // Double-click tray icon to show window
-    tray.on('double-click', () => {
-      if (mainWindow) {
-        mainWindow.show();
-        mainWindow.focus();
-      } else {
-        createWindow();
-      }
-    });
+    tray.on('double-click', () => revealMainWindow());
   } catch (error) {
     logger.warn('Failed to create tray icon, skipping tray functionality', { error });
     // Continue without tray
   }
 }
 
-function setupAutoStart(): void {
+/**
+ * Turns background start on the first time this device proves to be fully
+ * configured, which is the first time the agent actually starts. This covers
+ * every way a config can arrive - the installer, a hand-edited config.json or
+ * the UI - and stops as soon as the user has made their own choice.
+ */
+function enableAutoStartOnFirstRun(config: AgentConfig): void {
+  if (config.autoStart === true || config.autoStartUserManaged === true) {
+    return;
+  }
+
   try {
-    const config = loadConfig();
-    if (config.autoStart) {
-      app.setLoginItemSettings({
-        openAtLogin: true,
-        path: process.execPath,
-        args: []
-      });
-      logger.info('Auto-start enabled');
-    } else {
-      app.setLoginItemSettings({
-        openAtLogin: false
-      });
-      logger.info('Auto-start disabled');
-    }
+    saveConfig({ autoStart: true });
+    autoStartService.apply(true);
+    logger.info('Background start enabled: this device is configured');
   } catch (error) {
-    logger.error('Failed to setup auto-start', { error });
+    // The agent is already running; failing to persist this is not fatal.
+    logger.error('Failed to enable background start', { error });
   }
 }
 
-async function startAgent(): Promise<void> {
+/** Reapplies the OS login item to match the persisted autoStart setting. */
+function setupAutoStart(): void {
+  try {
+    const config = loadConfig();
+    autoStartService.apply(config.autoStart === true);
+  } catch (error) {
+    // An incomplete configuration is no reason to change what the OS already
+    // does; the setting is reapplied as soon as the config becomes valid.
+    logger.warn('Skipped auto-start setup, configuration is incomplete', { error });
+  }
+}
+
+interface StartAgentOptions {
+  /** Suppresses modal dialogs for launches nobody is sitting in front of. */
+  silent?: boolean;
+}
+
+/**
+ * Surfaces a configuration problem that stopped the agent from starting.
+ * A background launch has nobody watching, so the problem is logged and handed
+ * to the UI rather than blocking on a modal dialog no one would dismiss.
+ */
+function reportConfigProblem(message: string, detail: string, silent: boolean): void {
+  logger.warn(`Agent not started: ${message}`, { detail });
+
+  if (!silent) {
+    dialog.showMessageBox({
+      type: 'warning',
+      title: 'Configuration Required',
+      message,
+      detail,
+      buttons: ['OK']
+    });
+  }
+
+  // Notify UI to show config section
+  if (mainWindow) {
+    mainWindow.webContents.send('show-config');
+  }
+}
+
+/** True when the boot-time service is live and owns reporting for this device. */
+async function isReportingOwnedByService(): Promise<boolean> {
+  backgroundService = await backgroundServiceDetector.detect();
+  return backgroundService.running;
+}
+
+async function startAgent(options: StartAgentOptions = {}): Promise<void> {
+  const silent = options.silent === true;
+
   try {
     if (isAgentRunning) {
+      return;
+    }
+
+    // Checked on every start, not just at launch: the service can be stopped
+    // or started at any point while this window is open.
+    if (await isReportingOwnedByService()) {
+      logger.info('Background service is reporting for this device, leaving the desktop agent idle', {
+        kind: backgroundService?.kind,
+      });
+      updateUI();
+      updateTrayMenu();
       return;
     }
 
@@ -477,38 +573,21 @@ async function startAgent(): Promise<void> {
     try {
       config = loadConfig();
     } catch (error: any) {
-      // Config validation failed - show friendly message and open config
-      const message = `Configuration error: ${error.message}\n\nPlease open the configuration section and set the required fields (API URL, API Key, and Asset Tag).`;
-      
-      dialog.showMessageBox({
-        type: 'warning',
-        title: 'Configuration Required',
-        message: 'Agent Configuration Incomplete',
-        detail: message,
-        buttons: ['OK']
-      });
-      
-      // Notify UI to show config section
-      if (mainWindow) {
-        mainWindow.webContents.send('show-config');
-      }
+      reportConfigProblem(
+        'Agent Configuration Incomplete',
+        `${error.message}\n\nOpen the configuration and fill in the missing fields.`,
+        silent
+      );
       return;
     }
 
     // Additional validation
     if (!config.assetTag) {
-      dialog.showMessageBox({
-        type: 'warning',
-        title: 'Configuration Required',
-        message: 'Asset Tag Required',
-        detail: 'Asset Tag is required to identify this device. Please open the configuration section and set an Asset Tag.',
-        buttons: ['OK']
-      });
-      
-      // Notify UI to show config section
-      if (mainWindow) {
-        mainWindow.webContents.send('show-config');
-      }
+      reportConfigProblem(
+        'Asset Tag Required',
+        'Asset Tag is required to identify this device. Please open the configuration section and set an Asset Tag.',
+        silent
+      );
       return;
     }
 
@@ -517,13 +596,11 @@ async function startAgent(): Promise<void> {
     isAgentRunning = true;
 
     logger.info('Agent started successfully');
+    enableAutoStartOnFirstRun(config);
+
+    // updateUI already sends the complete status to the window
     updateUI();
     updateTrayMenu();
-
-    // Notify UI
-    if (mainWindow) {
-      mainWindow.webContents.send('agent-status-changed', { running: true });
-    }
   } catch (error: any) {
     logger.error('Failed to start agent', { error });
     
@@ -534,7 +611,14 @@ async function startAgent(): Promise<void> {
     } else if (error.message.includes('Unauthorized') || error.message.includes('401')) {
       errorDetail = 'Authentication failed. Please check:\n\n1. The API Key is correct in configuration\n2. The API Key has not expired';
     }
-    
+
+    if (silent) {
+      // Nobody is watching a background launch. The agent retries on the next
+      // launch, and the failure is already recorded in the log.
+      logger.warn('Suppressed agent startup dialog for background launch', { errorDetail });
+      return;
+    }
+
     dialog.showMessageBox({
       type: 'error',
       title: 'Failed to Start Agent',
@@ -556,13 +640,10 @@ async function stopAgent(): Promise<void> {
     agentService = null;
 
     logger.info('Agent stopped successfully');
+
+    // updateUI already sends the complete status to the window
     updateUI();
     updateTrayMenu();
-
-    // Notify UI
-    if (mainWindow) {
-      mainWindow.webContents.send('agent-status-changed', { running: false });
-    }
   } catch (error: any) {
     logger.error('Failed to stop agent', { error });
   }
@@ -571,75 +652,44 @@ async function stopAgent(): Promise<void> {
 function updateTrayMenu(): void {
   if (!tray) return;
 
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: 'Show Novaris Agent',
-      click: () => {
-        if (mainWindow) {
-          mainWindow.show();
-          mainWindow.focus();
-        } else {
-          createWindow();
-        }
-      }
-    },
-    { type: 'separator' },
-    {
-      label: `Status: ${isAgentRunning ? 'Running' : 'Stopped'}`,
-      enabled: false
-    },
-    { type: 'separator' },
-    {
-      label: 'Start Agent',
-      click: () => startAgent(),
-      enabled: !isAgentRunning
-    },
-    {
-      label: 'Stop Agent',
-      click: () => stopAgent(),
-      enabled: isAgentRunning
-    },
-    { type: 'separator' },
-    {
-      label: 'Quit',
-      click: () => {
-        app.quit();
-      }
-    }
-  ]);
-
-  const tooltipText = isAgentRunning 
-    ? 'Novaris Agent - Running' 
-    : 'Novaris Agent - Stopped';
+  const { menu: contextMenu, tooltip: tooltipText } = buildTrayMenu();
   tray.setToolTip(tooltipText);
   tray.setContextMenu(contextMenu);
 }
 
+/** The status shared by the window, the tray and the status IPC call. */
+function buildAgentStatus() {
+  const managedByService = backgroundService?.running === true;
+
+  return {
+    running: isAgentRunning,
+    status: isAgentRunning ? 'Running' : managedByService ? 'Running as a service' : 'Stopped',
+    online: agentService ? agentService.getOnlineStatus() : null,
+    managedByService,
+    serviceKind: managedByService ? backgroundService?.kind ?? null : null
+  };
+}
+
 function updateUI(): void {
   if (mainWindow) {
-    const online = agentService ? agentService.getOnlineStatus() : null;
-    mainWindow.webContents.send('agent-status-changed', {
-      running: isAgentRunning,
-      status: isAgentRunning ? 'Running' : 'Stopped',
-      online
-    });
+    mainWindow.webContents.send('agent-status-changed', buildAgentStatus());
   }
 }
 
 function startAgentOnLaunch(): void {
-  startAgent().catch((error) => {
+  startAgent({ silent: launchedInBackground }).catch((error) => {
     logger.error('Failed to auto-start agent on application launch', { error });
   });
 }
 
 // IPC handlers
-ipcMain.handle('get-agent-status', () => {
-  const online = agentService ? agentService.getOnlineStatus() : null;
-  return {
-    running: isAgentRunning,
-    status: isAgentRunning ? 'Running' : 'Stopped',
-    online
-  };
+ipcMain.handle('get-agent-status', async () => {
+  // Refreshed here so a window opened later reflects the service accurately
+  if (!isAgentRunning) {
+    await isReportingOwnedByService();
+  }
+
+  return buildAgentStatus();
 });
 
 ipcMain.handle('get-app-version', () => {
@@ -812,10 +862,14 @@ ipcMain.handle('get-config', () => {
 
 ipcMain.handle('save-config', async (event, newConfig: Partial<AgentConfig>) => {
   try {
-    const currentConfig = loadConfig();
-    const updatedConfig = { ...currentConfig, ...newConfig };
-    saveConfig(updatedConfig);
-    logger.info('Configuration saved', { config: updatedConfig });
+    // saveConfig merges into the file on disk, so a still-incomplete config can
+    // be completed here rather than being rejected by loadConfig first. Only
+    // the field names are logged: the payload carries the API key.
+    saveConfig(newConfig);
+    logger.info('Configuration saved', { fields: Object.keys(newConfig) });
+
+    // Match the OS login item to the configuration that was just written
+    setupAutoStart();
 
     // Restart agent if it's running to apply new config
     if (isAgentRunning) {
@@ -827,6 +881,26 @@ ipcMain.handle('save-config', async (event, newConfig: Partial<AgentConfig>) => 
   } catch (error: any) {
     logger.error('Failed to save configuration', { error });
     return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('get-auto-start', () => {
+  // Reports what the OS will actually do, rather than what config asked for.
+  return { enabled: autoStartService.isEnabled() };
+});
+
+ipcMain.handle('set-auto-start', (_event, enabled: unknown) => {
+  const shouldEnable = enabled === true;
+
+  try {
+    // Recording the choice stops the first-run logic from overriding it later.
+    saveConfig({ autoStart: shouldEnable, autoStartUserManaged: true });
+    autoStartService.apply(shouldEnable);
+
+    return { success: true, enabled: autoStartService.isEnabled() };
+  } catch (error: any) {
+    logger.error('Failed to change background start setting', { error, enabled: shouldEnable });
+    return { success: false, enabled: autoStartService.isEnabled(), error: error.message };
   }
 });
 
@@ -921,18 +995,29 @@ ipcMain.handle('open-logs', async () => {
 });
 
 // App event handlers
-app.whenReady().then(() => {
-  createTray();
-  createWindow();
-  setupAutoStart();
-  startAgentOnLaunch();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+if (!hasSingleInstanceLock) {
+  // Another instance already owns the agent. Hand the launch over to it.
+  logger.info('Another instance is already running, exiting this one');
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    // A manual launch while we sit in the tray means the user wants the window.
+    revealMainWindow();
   });
-});
+
+  app.whenReady().then(() => {
+    createTray();
+    createWindow({ startHidden: launchedInBackground });
+    setupAutoStart();
+    startAgentOnLaunch();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   // On macOS, keep app running even when all windows are closed

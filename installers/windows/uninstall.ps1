@@ -3,7 +3,8 @@
 
 $ErrorActionPreference = "Stop"
 
-$ServiceName = "NovarisAgent"
+$TaskName = "NovarisAgent"
+$LegacyServiceName = "NovarisAgent"
 $InstallDir = "$env:ProgramFiles\Novaris\Agent"
 
 Write-Host "Uninstalling Novaris Agent..." -ForegroundColor Green
@@ -15,19 +16,38 @@ if (-not $isAdmin) {
     exit 1
 }
 
-# Stop and remove service
-$service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-if ($service) {
-    Write-Host "Stopping service..." -ForegroundColor Yellow
-    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-    
-    Write-Host "Removing service..." -ForegroundColor Yellow
-    sc.exe delete $ServiceName | Out-Null
-    Start-Sleep -Seconds 2
-    Write-Host "Service removed" -ForegroundColor Green
+# Stop and remove the scheduled task
+$task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($task) {
+    Write-Host "Stopping the agent..." -ForegroundColor Yellow
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+
+    Write-Host "Removing the scheduled task..." -ForegroundColor Yellow
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    Write-Host "Scheduled task removed" -ForegroundColor Green
 } else {
-    Write-Host "Service not found" -ForegroundColor Yellow
+    Write-Host "Scheduled task not found" -ForegroundColor Yellow
 }
+
+# Remove the service registered by earlier versions, if it is still around
+$legacyService = Get-Service -Name $LegacyServiceName -ErrorAction SilentlyContinue
+if ($legacyService) {
+    Write-Host "Removing the legacy Windows service..." -ForegroundColor Yellow
+    Stop-Service -Name $LegacyServiceName -Force -ErrorAction SilentlyContinue
+    sc.exe delete $LegacyServiceName | Out-Null
+    Start-Sleep -Seconds 2
+    Write-Host "Legacy service removed" -ForegroundColor Green
+}
+
+# Any agent still running from the install directory has to go before it is
+# deleted. The executable is Node's own, so the install path is only visible in
+# the command line.
+Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" -ErrorAction SilentlyContinue |
+    Where-Object { $_.CommandLine -and $_.CommandLine -like "*$InstallDir*" } |
+    ForEach-Object {
+        Write-Host "Stopping agent process $($_.ProcessId)..." -ForegroundColor Yellow
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
 
 # Remove installation directory
 if (Test-Path $InstallDir) {
@@ -46,4 +66,3 @@ if (Test-Path $parentDir) {
 }
 
 Write-Host "`nUninstallation complete!" -ForegroundColor Green
-

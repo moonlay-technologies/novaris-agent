@@ -18,6 +18,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   downloadAndInstallUpdate: () => ipcRenderer.invoke('download-and-install-update'),
 
+  // Background start. Deliberately narrower than the whole config, which
+  // carries the API key and has no business in the renderer.
+  getAutoStart: () => ipcRenderer.invoke('get-auto-start'),
+  setAutoStart: (enabled: boolean) => ipcRenderer.invoke('set-auto-start', enabled),
+
   // File operations
   openConfig: () => ipcRenderer.invoke('open-config'),
   openLogs: () => ipcRenderer.invoke('open-logs'),

@@ -36,6 +36,10 @@ export interface AgentConfig {
   logLevel: 'error' | 'warn' | 'info' | 'debug';
   logFile?: string;
   autoStart: boolean; // Whether to launch the application automatically on system startup
+  // Set once the user makes their own choice about autoStart. While unset the
+  // agent may turn autoStart on by itself, the first time the device is fully
+  // configured; afterwards the user's choice is left alone.
+  autoStartUserManaged?: boolean;
 }
 
 export const DEFAULT_CONFIG: Partial<AgentConfig> = {
