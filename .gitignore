@@ -9,3 +9,12 @@ config.json
 *.key
 release/
 
+# osquery binaries are fetched separately per resources/osquery/README.md,
+# not committed - they're third-party executables, not source.
+resources/osquery/*/osqueryi
+resources/osquery/*/osqueryi.exe
+
+# yara-x binary, same reasoning - see resources/yara/README.md
+resources/yara/*/yr
+resources/yara/*/yr.exe
+

@@ -168,6 +168,65 @@ export function loadConfig(): AgentConfig {
   if (process.env.NOVARIS_PROCESS_INTERVAL) {
     envConfig.processInterval = parseInt(process.env.NOVARIS_PROCESS_INTERVAL, 10);
   }
+  if (process.env.NOVARIS_COLLECT_YARA_SCAN) {
+    const raw = process.env.NOVARIS_COLLECT_YARA_SCAN.trim().toLowerCase();
+    envConfig.collectYaraScan = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_YARA_SCAN_INTERVAL) {
+    envConfig.yaraScanInterval = parseInt(process.env.NOVARIS_YARA_SCAN_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_YARA_SCAN_PATHS) {
+    envConfig.yaraScanPaths = process.env.NOVARIS_YARA_SCAN_PATHS.split(',').map((p) => p.trim()).filter(Boolean);
+  }
+  if (process.env.NOVARIS_YARA_SCAN_MAX_FILES) {
+    envConfig.yaraScanMaxFiles = parseInt(process.env.NOVARIS_YARA_SCAN_MAX_FILES, 10);
+  }
+  if (process.env.NOVARIS_YARA_SCAN_MAX_FILE_SIZE_BYTES) {
+    envConfig.yaraScanMaxFileSizeBytes = parseInt(process.env.NOVARIS_YARA_SCAN_MAX_FILE_SIZE_BYTES, 10);
+  }
+  if (process.env.NOVARIS_AGENT_MODE === 'endpoint' || process.env.NOVARIS_AGENT_MODE === 'network_gateway') {
+    envConfig.agentMode = process.env.NOVARIS_AGENT_MODE;
+  }
+  if (process.env.NOVARIS_COLLECT_SYSLOG) {
+    const raw = process.env.NOVARIS_COLLECT_SYSLOG.trim().toLowerCase();
+    envConfig.collectSyslog = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_SYSLOG_PORT) {
+    envConfig.syslogPort = parseInt(process.env.NOVARIS_SYSLOG_PORT, 10);
+  }
+  if (process.env.NOVARIS_SYSLOG_INTERVAL) {
+    envConfig.syslogInterval = parseInt(process.env.NOVARIS_SYSLOG_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_COLLECT_SNMP) {
+    const raw = process.env.NOVARIS_COLLECT_SNMP.trim().toLowerCase();
+    envConfig.collectSnmp = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_SNMP_TARGETS) {
+    envConfig.snmpTargets = process.env.NOVARIS_SNMP_TARGETS.split(',').map((t) => t.trim()).filter(Boolean);
+  }
+  if (process.env.NOVARIS_SNMP_COMMUNITY) {
+    envConfig.snmpCommunity = process.env.NOVARIS_SNMP_COMMUNITY;
+  }
+  if (process.env.NOVARIS_SNMP_INTERVAL) {
+    envConfig.snmpInterval = parseInt(process.env.NOVARIS_SNMP_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_COLLECT_ACTIVE_DISCOVERY) {
+    const raw = process.env.NOVARIS_COLLECT_ACTIVE_DISCOVERY.trim().toLowerCase();
+    envConfig.collectActiveDiscovery = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_ACTIVE_DISCOVERY_INTERVAL) {
+    envConfig.activeDiscoveryInterval = parseInt(process.env.NOVARIS_ACTIVE_DISCOVERY_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_COLLECT_ZEEK_LOGS) {
+    const raw = process.env.NOVARIS_COLLECT_ZEEK_LOGS.trim().toLowerCase();
+    envConfig.collectZeekLogs = raw === '1' || raw === 'true' || raw === 'yes';
+  }
+  if (process.env.NOVARIS_ZEEK_LOG_DIR) {
+    envConfig.zeekLogDir = process.env.NOVARIS_ZEEK_LOG_DIR;
+  }
+  if (process.env.NOVARIS_ZEEK_LOGS_INTERVAL) {
+    envConfig.zeekLogsInterval = parseInt(process.env.NOVARIS_ZEEK_LOGS_INTERVAL, 10);
+  }
   if (process.env.NOVARIS_POLL_RESPONSE_ACTIONS) {
     const raw = process.env.NOVARIS_POLL_RESPONSE_ACTIONS.trim().toLowerCase();
     envConfig.pollResponseActions = raw === '1' || raw === 'true' || raw === 'yes';

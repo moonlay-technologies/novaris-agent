@@ -1,0 +1,28 @@
+title: Suspicious Process Start Indicator
+id: 386908d6-e915-4fc2-9a23-e17faef91ab7
+event_type: suspicious_process_start
+status: stable
+level: high
+description: >
+  Matches encoded PowerShell execution (a common obfuscation/living-off-the-land
+  technique) or other commonly-abused living-off-the-land binaries
+  (rundll32, mshta) and download-and-execute patterns (wget/curl piped to a shell).
+logsource:
+  category: application
+  product: novaris-agent
+detection:
+  selection_encoded_powershell:
+    message|contains|all:
+      - 'powershell'
+      - ' -enc '
+  selection_encoded_powershell_alt:
+    message|contains|all:
+      - 'powershell'
+      - 'encodedcommand'
+  selection_other_tools:
+    message|contains:
+      - 'rundll32'
+      - 'wget http'
+      - 'curl http'
+      - 'mshta'
+  condition: selection_encoded_powershell or selection_encoded_powershell_alt or selection_other_tools

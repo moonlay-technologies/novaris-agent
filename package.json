@@ -5,8 +5,9 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "build": "tsc",
+    "postbuild": "node -e \"const fs=require('fs');fs.mkdirSync('dist/rules',{recursive:true});try{fs.cpSync('src/rules','dist/rules',{recursive:true,force:true})}catch(e){}\"",
     "build-electron": "npm run build && tsc -p tsconfig-electron.json",
-    "postbuild-electron": "node -e \"const fs=require('fs');const path=require('path');['dist-electron/ui','dist-electron/assets'].forEach(d=>fs.mkdirSync(d,{recursive:true}));const copyDir=(s,d)=>{try{fs.cpSync(s,d,{recursive:true,force:true})}catch(e){}};copyDir('src-electron/ui','dist-electron/ui');copyDir('src-electron/assets','dist-electron/assets')\"",
+    "postbuild-electron": "node -e \"const fs=require('fs');const path=require('path');['dist-electron/ui','dist-electron/assets','dist-electron/rules'].forEach(d=>fs.mkdirSync(d,{recursive:true}));const copyDir=(s,d)=>{try{fs.cpSync(s,d,{recursive:true,force:true})}catch(e){}};copyDir('src-electron/ui','dist-electron/ui');copyDir('src-electron/assets','dist-electron/assets');copyDir('src/rules','dist-electron/rules')\"",
     "clean": "node -e \"const fs=require('fs');['dist-electron','release'].forEach(d=>{try{fs.rmSync(d,{recursive:true,force:true})}catch(e){}})\"",
     "start": "node dist/index.js",
     "start-electron": "npm run build-electron && electron dist-electron/main.js",
@@ -14,7 +15,9 @@
     "dev-electron": "cross-env NODE_ENV=development npm run build-electron && electron dist-electron/main.js",
     "dist": "npm run clean && npm run build-electron && electron-builder",
     "lint": "eslint src --ext .ts src-electron --ext .ts",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "fetch-osquery": "node scripts/fetch-osquery.js",
+    "fetch-yara": "node scripts/fetch-yara.js"
   },
   "keywords": [],
   "author": "Moonlay Technology",
@@ -38,7 +41,17 @@
       "id"
     ],
     "mac": {
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "extraResources": [
+        {
+          "from": "resources/osquery/darwin",
+          "to": "osquery/darwin"
+        },
+        {
+          "from": "resources/yara/darwin",
+          "to": "yara/darwin"
+        }
+      ]
     },
     "win": {
       "target": [
@@ -46,21 +59,43 @@
         "msiwrapped"
       ],
       "sign": null,
-      "icon": "src-electron/assets/app_icon.png"
+      "icon": "src-electron/assets/app_icon.png",
+      "extraResources": [
+        {
+          "from": "resources/osquery/win32",
+          "to": "osquery/win32"
+        },
+        {
+          "from": "resources/yara/win32",
+          "to": "yara/win32"
+        }
+      ]
     },
     "linux": {
-      "target": "AppImage"
+      "target": "AppImage",
+      "extraResources": [
+        {
+          "from": "resources/osquery/linux",
+          "to": "osquery/linux"
+        },
+        {
+          "from": "resources/yara/linux",
+          "to": "yara/linux"
+        }
+      ]
     }
   },
   "homepage": "./",
   "dependencies": {
     "axios": "^1.6.2",
+    "net-snmp": "^3.26.3",
     "systeminformation": "^5.21.20",
     "winston": "^3.11.0",
     "ws": "^8.21.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@types/net-snmp": "^3.23.0",
     "@types/node": "^20.10.6",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^6.17.0",

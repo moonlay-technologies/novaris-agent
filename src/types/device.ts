@@ -98,7 +98,8 @@ export type ResponseActionType =
   | 'kill_process'
   | 'enable_firewall'
   | 'isolate_network'
-  | 'restart_device';
+  | 'restart_device'
+  | 'scan_path';
 
 export interface ResponseAction {
   id: number;

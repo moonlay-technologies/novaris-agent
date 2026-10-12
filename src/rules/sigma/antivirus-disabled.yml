@@ -1,0 +1,16 @@
+title: Antivirus Protection Disabled
+id: a6a101be-d143-47fc-95e2-d2c6e73c6c82
+event_type: antivirus_disabled
+status: stable
+level: high
+description: Matches indicators that antivirus/real-time protection has been turned off.
+logsource:
+  category: application
+  product: novaris-agent
+detection:
+  selection:
+    message|contains:
+      - 'antivirus disabled'
+      - 'real-time protection is off'
+      - 'defender disabled'
+  condition: selection

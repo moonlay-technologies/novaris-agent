@@ -47,6 +47,7 @@ export class ProcessRegistryService {
     register('security-posture.reporting', 'Security posture reporting', 'Reports antivirus, firewall, encryption, and posture state', 'reporting', config.collectSecurityPosture, config.securityPostureInterval);
     register('logs.reporting', 'Operating system log reporting', 'Collects and reports incremental system logs', 'reporting', config.collectLogs, config.logsInterval);
     register('processes.reporting', 'Process reporting', 'Collects and reports active process snapshots', 'reporting', config.collectProcesses, config.processInterval);
+    register('yara-scan.reporting', 'YARA scan reporting', 'Scans common risk directories for malware signatures', 'reporting', config.collectYaraScan, config.yaraScanInterval);
     register('response-actions.polling', 'Response action polling', 'Polls and executes pending remote response actions', 'integration', config.pollResponseActions, config.responseActionsInterval);
     register('offline-queue.processing', 'Offline queue processing', 'Retries reports queued while the backend was unavailable', 'integration', true, Math.max(30, config.reportInterval));
   }
