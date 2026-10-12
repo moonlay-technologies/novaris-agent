@@ -28,8 +28,6 @@ if [ -z "$NODE_PATH" ]; then
 fi
 echo "Using Node.js at $NODE_PATH"
 
-"$SCRIPT_DIR/../install-hermes.sh"
-
 # Create installation directory, including the log directory the daemon
 # redirects its output into.
 echo "Creating installation directory..."

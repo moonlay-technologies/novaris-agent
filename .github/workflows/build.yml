@@ -1,0 +1,81 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest }
+          - { name: macos-arm64, os: macos-14 }
+          - { name: macos-x64, os: macos-13 }
+          - { name: linux-x64, os: ubuntu-22.04 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: runtime/uv.lock
+
+      # PyInstaller cannot cross-compile, so every OS builds its own runtime bundle.
+      - name: Test agent runtime
+        working-directory: runtime
+        run: |
+          uv sync --frozen
+          uv run pytest -q
+
+      - name: Build agent runtime bundle
+        working-directory: runtime
+        env:
+          # macOS: sign the PyInstaller output with the same identity electron-builder uses.
+          NOVARIS_MAC_SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
+          NOVARIS_MAC_ENTITLEMENTS: ${{ runner.os == 'macOS' && 'entitlements.mac.plist' || '' }}
+        run: uv run python build.py
+
+      - name: Test bundled runtime end to end
+        working-directory: runtime
+        shell: bash
+        run: |
+          exe=dist/novaris-runtime/novaris-runtime
+          [ "$RUNNER_OS" = "Windows" ] && exe="$exe.exe"
+          NOVARIS_RUNTIME_EXE="$PWD/$exe" uv run pytest -q tests/test_process.py
+
+      - run: npm ci
+
+      - name: Test Electron integration
+        run: npm run test-electron
+
+      - name: Package app
+        env:
+          # Code signing; leave the secrets unset to build unsigned.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npx electron-builder --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: novaris-agent-${{ matrix.name }}
+          path: |
+            release/*.exe
+            release/*.msi
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+          if-no-files-found: error

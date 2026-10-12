@@ -1,21 +1,19 @@
 import WebSocket from 'ws';
 import { getLogger } from '../../dist/utils/logger';
+import { RuntimeEndpoint } from './supervisor';
 
-export interface HermesChatEvent {
+export interface AgentChatEvent {
   type: string;
   session_id?: string;
   payload?: Record<string, unknown>;
 }
 
-export interface HermesChatMessage {
-  role: 'user' | 'assistant' | 'system';
-  text: string;
-}
+export type AgentChatResponseType = 'approval' | 'clarify';
 
 interface JsonRpcFrame {
   id?: string | number;
   method?: string;
-  params?: HermesChatEvent;
+  params?: AgentChatEvent;
   result?: unknown;
   error?: { message?: string };
 }
@@ -26,78 +24,72 @@ interface PendingRequest {
   timer: NodeJS.Timeout;
 }
 
-/** Main-process WebSocket client for Hermes's local JSON-RPC gateway. */
-export class HermesChatService {
+const REQUEST_TIMEOUT_MS = 30_000;
+const CONNECT_TIMEOUT_MS = 15_000;
+
+/** Main-process WebSocket client for the local agent runtime's JSON-RPC server. */
+export class AgentChatService {
   private readonly logger = getLogger();
   private socket: WebSocket | null = null;
   private nextRequestId = 0;
   private sessionId: string | null = null;
   private readonly pending = new Map<string | number, PendingRequest>();
-  private eventListener: ((event: HermesChatEvent) => void) | null = null;
-  private readyPromise: Promise<void> | null = null;
+  private eventListener: ((event: AgentChatEvent) => void) | null = null;
+
+  constructor(private readonly resolveEndpoint: () => Promise<RuntimeEndpoint>) {}
 
   get connected(): boolean {
     return this.socket?.readyState === WebSocket.OPEN;
   }
 
-  async connect(port = 8642, token?: string): Promise<{ success: boolean; message: string }> {
+  async connect(): Promise<{ success: boolean; message: string }> {
     if (this.connected) return { success: true, message: 'Already connected' };
 
-    const sessionToken = token || process.env.HERMES_SESSION_TOKEN;
-    const auth = sessionToken ? `?token=${encodeURIComponent(sessionToken)}` : '';
-    const socket = new WebSocket(`ws://127.0.0.1:${port}/api/ws${auth}`);
+    const { port, token } = await this.resolveEndpoint();
+    const socket = new WebSocket(`ws://127.0.0.1:${port}/api/ws?token=${encodeURIComponent(token)}`);
     this.socket = socket;
 
-    this.readyPromise = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Timed out waiting for Hermes gateway readiness')), 15000);
+    // The runtime sends `gateway.ready` as soon as the connection is accepted.
+    const ready = new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Timed out waiting for the assistant to respond')), CONNECT_TIMEOUT_MS);
       socket.on('message', (raw) => {
-        const ready = this.handleFrame(raw.toString());
-        if (ready) {
+        if (this.handleFrame(raw.toString())) {
           clearTimeout(timeout);
           resolve();
         }
       });
+      socket.once('error', (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+      socket.once('close', () => {
+        clearTimeout(timeout);
+        reject(new Error('The assistant closed the connection'));
+      });
     });
     socket.on('close', () => {
       if (this.socket === socket) this.socket = null;
-      this.rejectPending(new Error('Hermes gateway WebSocket closed'));
+      this.rejectPending(new Error('Connection to the assistant was closed'));
+      this.eventListener?.({ type: 'connection.closed' });
     });
-    socket.on('error', (error) => this.logger.warn('Hermes chat WebSocket error', { error }));
+    socket.on('error', (error) => this.logger.warn('Agent chat WebSocket error', { error: error.message }));
 
     try {
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Timed out connecting to Hermes gateway')), 15000);
-        socket.once('open', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-        socket.once('error', (error) => {
-          clearTimeout(timeout);
-          reject(error);
-        });
-      });
-      await this.readyPromise;
+      await ready;
     } catch (error) {
       if (this.socket === socket) this.socket = null;
       socket.terminate();
-      this.readyPromise = null;
-      const message = error instanceof Error ? error.message : String(error);
-      if (!sessionToken && /closed|timeout/i.test(message)) {
-        throw new Error('Hermes gateway authentication is required. Enter its loopback session token and try again.');
-      }
       throw error;
     }
-    this.readyPromise = null;
-
-    return { success: true, message: 'Connected to Hermes gateway' };
+    return { success: true, message: 'Connected to the assistant' };
   }
 
-  async createSession(): Promise<{ success: boolean; sessionId?: string; message: string }> {
-    const result = await this.request<{ session_id?: string }>('session.create');
-    const sessionId = result.session_id;
-    if (!sessionId) throw new Error('Hermes did not return a session ID');
-    this.sessionId = sessionId;
-    return { success: true, sessionId, message: 'Session created' };
+  /** Starts a new conversation, or reattaches to a saved one when `sessionId` is given. */
+  async createSession(sessionId?: string): Promise<{ success: boolean; sessionId?: string; message: string }> {
+    const result = await this.request<{ session_id?: string }>('session.create', sessionId ? { session_id: sessionId } : {});
+    if (!result.session_id) throw new Error('The assistant did not return a session ID');
+    this.sessionId = result.session_id;
+    return { success: true, sessionId: result.session_id, message: 'Session created' };
   }
 
   async sendMessage(text: string): Promise<{ success: boolean; message: string }> {
@@ -109,40 +101,27 @@ export class HermesChatService {
   }
 
   async respondToRequest(
-    type: 'approval' | 'secret' | 'sudo' | 'clarify',
+    type: AgentChatResponseType,
     value: string,
     requestId?: string,
     sessionId?: string,
   ): Promise<{ success: boolean; message: string }> {
-    const cleanValue = value.trim();
-    if (cleanValue.length > 20000) throw new Error('Response is too long');
+    if (value.length > 20000) throw new Error('Response is too long');
 
-    const params: Record<string, unknown> = {};
-    let method: string;
     if (type === 'approval') {
-      if (!['once', 'session', 'always', 'deny'].includes(cleanValue)) {
-        throw new Error('Invalid approval choice');
-      }
-      method = 'approval.respond';
-      params.choice = cleanValue;
-      params.session_id = sessionId || this.sessionId;
+      const choice = value.trim();
+      if (!['once', 'session', 'always', 'deny'].includes(choice)) throw new Error('Invalid approval choice');
+      await this.request('approval.respond', { choice, session_id: sessionId || this.sessionId });
     } else if (type === 'clarify') {
       if (!requestId) throw new Error('Clarification request ID is required');
-      method = 'clarify.respond';
-      params.clarify_id = requestId;
-      params.response = value;
+      await this.request('clarify.respond', { clarify_id: requestId, response: value });
     } else {
-      if (!requestId) throw new Error('Request ID is required');
-      method = `${type}.respond`;
-      params.request_id = requestId;
-      params[type === 'sudo' ? 'password' : 'value'] = value;
+      throw new Error('Unsupported response type');
     }
-
-    await this.request(method, params);
-    return { success: true, message: 'Hermes request resolved' };
+    return { success: true, message: 'Request answered' };
   }
 
-  setEventListener(listener: ((event: HermesChatEvent) => void) | null): void {
+  setEventListener(listener: ((event: AgentChatEvent) => void) | null): void {
     this.eventListener = listener;
   }
 
@@ -151,7 +130,7 @@ export class HermesChatService {
     const socket = this.socket;
     this.socket = null;
     if (socket) socket.close();
-    this.rejectPending(new Error('Hermes chat disconnected'));
+    this.rejectPending(new Error('Disconnected from the assistant'));
   }
 
   dispose(): void {
@@ -159,14 +138,15 @@ export class HermesChatService {
   }
 
   private request<T>(method: string, params: Record<string, unknown> = {}): Promise<T> {
-    if (!this.connected || !this.socket) return Promise.reject(new Error('Hermes gateway is not connected'));
+    if (!this.connected || !this.socket) return Promise.reject(new Error('Not connected to the assistant'));
     const id = `novaris-${++this.nextRequestId}`;
 
     return new Promise<T>((resolve, reject) => {
+      // Requests are acknowledged immediately; answers stream back as events.
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new Error(`Hermes request timed out: ${method}`));
-      }, 120000);
+        reject(new Error(`Assistant request timed out: ${method}`));
+      }, REQUEST_TIMEOUT_MS);
       this.pending.set(id, { resolve: resolve as (result: unknown) => void, reject, timer });
       try {
         this.socket?.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
@@ -178,6 +158,7 @@ export class HermesChatService {
     });
   }
 
+  /** Handles one frame; returns true when it is the runtime's ready event. */
   private handleFrame(raw: string): boolean {
     let frame: JsonRpcFrame;
     try {
@@ -191,7 +172,7 @@ export class HermesChatService {
       if (!pending) return false;
       clearTimeout(pending.timer);
       this.pending.delete(frame.id);
-      if (frame.error) pending.reject(new Error(frame.error.message || 'Hermes RPC request failed'));
+      if (frame.error) pending.reject(new Error(frame.error.message || 'Assistant request failed'));
       else pending.resolve(frame.result);
       return false;
     }

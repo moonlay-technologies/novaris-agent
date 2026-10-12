@@ -267,100 +267,31 @@
             color: #999;
         }
 
-        .gateway-panel {
-            margin: 20px 0;
-            padding: 20px;
-            border: 1px solid #dfe5e3;
-            border-radius: 12px;
-            text-align: left;
-            background: #fbfdfc;
-        }
-
-        .gateway-panel h2 {
-            font-size: 18px;
-            color: #1a5a4d;
-            margin-bottom: 6px;
-        }
-
-        .gateway-help, .gateway-message {
+        .panel-help, .panel-message {
             font-size: 12px;
             line-height: 1.5;
             color: #68736f;
             margin-bottom: 12px;
         }
 
-        .gateway-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-        }
-
-        .gateway-field {
+        .activation-row {
             display: flex;
-            flex-direction: column;
-            gap: 4px;
-            font-size: 12px;
-            color: #44504c;
+            gap: 8px;
+            margin-bottom: 12px;
         }
 
-        .gateway-field input {
-            width: 100%;
+        .activation-row input {
+            min-width: 0;
+            flex: 1;
             padding: 9px 10px;
             border: 1px solid #cbd6d2;
             border-radius: 7px;
             font: inherit;
         }
 
-        .gateway-field input:focus {
+        .activation-row input:focus {
             outline: 2px solid rgba(26, 90, 77, 0.2);
             border-color: #1a5a4d;
-        }
-
-        .gateway-platform {
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid #e6ece9;
-        }
-
-        .gateway-platform-title {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 8px;
-            font-weight: 700;
-            color: #333;
-        }
-
-        .gateway-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 14px;
-        }
-
-        .gateway-actions .btn {
-            padding: 10px 12px;
-            font-size: 13px;
-        }
-
-        .gateway-status {
-            display: inline-block;
-            margin-top: 12px;
-            padding: 6px 10px;
-            border-radius: 15px;
-            background: #e2e3e5;
-            color: #59635f;
-            font-size: 12px;
-        }
-
-        .pairing-row {
-            display: flex;
-            gap: 8px;
-            margin-top: 10px;
-        }
-
-        .pairing-row input {
-            min-width: 0;
-            flex: 1;
         }
 
         .chat-panel {
@@ -390,6 +321,11 @@
             background: #fff8e1;
         }
         .chat-prompt button { margin: 6px 6px 0 0; }
+        .chat-prompt input { width: 100%; margin-top: 6px; padding: 6px 8px; border: 1px solid #cbd6d2; border-radius: 6px; font: inherit; }
+        .chat-prompt details { margin-top: 6px; font-size: 12px; color: #59635f; }
+        .chat-prompt pre { max-height: 160px; overflow: auto; white-space: pre-wrap; }
+        .chat-tool { color: #7a8581; font-size: 12px; }
+        .chat-panel h2 { font-size: 18px; color: #1a5a4d; margin-bottom: 6px; }
 
         .chat-input {
             width: 100%;
@@ -442,64 +378,17 @@
             <label for="autostart-enabled">Start automatically in the background at login</label>
         </div>
 
-        <section class="gateway-panel" aria-labelledby="gateway-title">
-            <h2 id="gateway-title">Hermes Gateway</h2>
-            <p class="gateway-help">Configure Hermes messaging integrations without opening a terminal. Credentials stay in the local Hermes configuration and are never displayed after saving.</p>
-
-            <div class="gateway-platform">
-                <div class="gateway-platform-title"><input id="telegram-enabled" type="checkbox"> <label for="telegram-enabled">Telegram</label></div>
-                <div class="gateway-grid">
-                    <label class="gateway-field">Bot token<input id="telegram-token" type="password" autocomplete="off" placeholder="From BotFather"></label>
-                    <label class="gateway-field">Home channel (optional)<input id="telegram-home" type="text" placeholder="Channel or chat ID"></label>
-                </div>
-            </div>
-
-            <div class="gateway-platform">
-                <div class="gateway-platform-title"><input id="discord-enabled" type="checkbox"> <label for="discord-enabled">Discord</label></div>
-                <div class="gateway-grid">
-                    <label class="gateway-field">Bot token<input id="discord-token" type="password" autocomplete="off" placeholder="From Discord Developer Portal"></label>
-                    <label class="gateway-field">Home channel (optional)<input id="discord-home" type="text" placeholder="Channel ID"></label>
-                </div>
-            </div>
-
-            <div class="gateway-platform">
-                <div class="gateway-platform-title"><input id="slack-enabled" type="checkbox"> <label for="slack-enabled">Slack</label></div>
-                <div class="gateway-grid">
-                    <label class="gateway-field">App token<input id="slack-token" type="password" autocomplete="off" placeholder="xapp-..."></label>
-                    <label class="gateway-field">Bot/API key<input id="slack-api-key" type="password" autocomplete="off" placeholder="xoxb-..."></label>
-                </div>
-            </div>
-
-            <div class="gateway-platform">
-                <div class="gateway-platform-title"><input id="whatsapp-enabled" type="checkbox"> <label for="whatsapp-enabled">WhatsApp</label></div>
-                <p class="gateway-help">After saving, start the gateway and use the pairing code shown by Hermes on your phone.</p>
-            </div>
-
-            <div class="gateway-actions">
-                <button id="gateway-save" class="btn primary">Save Gateway</button>
-                <button id="gateway-start" class="btn success">Start</button>
-                <button id="gateway-stop" class="btn danger">Stop</button>
-                <button id="gateway-refresh" class="btn secondary">Refresh</button>
-            </div>
-            <div id="gateway-status" class="gateway-status">Gateway status: checking...</div>
-            <div id="gateway-message" class="gateway-message" role="status"></div>
-            <div class="pairing-row">
-                <input id="pairing-code" type="text" maxlength="8" inputmode="text" placeholder="8-character pairing code">
-                <button id="pairing-approve" class="btn secondary">Approve Telegram Pairing</button>
-            </div>
-        </section>
-
         <section class="chat-panel" aria-labelledby="chat-title">
-            <h2 id="chat-title">Chat with Hermes</h2>
-            <p class="gateway-help">Connects to the local Hermes gateway. Start the gateway first, then create a session and send a prompt.</p>
-            <div class="gateway-grid">
-                <label class="gateway-field">Gateway port<input id="chat-port" type="number" min="1" max="65535" value="8642"></label>
-                <label class="gateway-field">Session token (optional)<input id="chat-token" type="password" autocomplete="off" placeholder="Only needed for protected loopback mode"></label>
+            <h2 id="chat-title">Novaris Assistant</h2>
+            <p id="assistant-status" class="panel-help" role="status">Checking assistant status...</p>
+            <div id="activation-row" class="activation-row" hidden>
+                <input id="install-code" type="password" autocomplete="off" placeholder="Install code from your administrator">
+                <button id="activate-btn" class="btn primary">Activate</button>
             </div>
             <div id="chat-output" class="chat-output" role="log" aria-live="polite">Not connected.</div>
-            <textarea id="chat-input" class="chat-input" maxlength="20000" placeholder="Ask Hermes something..."></textarea>
+            <textarea id="chat-input" class="chat-input" maxlength="20000" placeholder="Ask the assistant something..."></textarea>
             <div class="chat-actions">
-                <button id="chat-connect" class="btn primary">Connect</button>
+                <button id="chat-connect" class="btn primary" disabled>Connect</button>
                 <button id="chat-send" class="btn success" disabled>Send</button>
                 <button id="chat-disconnect" class="btn secondary" disabled>Disconnect</button>
             </div>
@@ -548,20 +437,15 @@
         const updateTextEl = document.getElementById('update-text');
         const downloadProgressEl = document.getElementById('download-progress');
         const versionTextEl = document.getElementById('version-text');
-        const gatewayStatusEl = document.getElementById('gateway-status');
-        const gatewayMessageEl = document.getElementById('gateway-message');
-        const gatewaySaveBtn = document.getElementById('gateway-save');
-        const gatewayStartBtn = document.getElementById('gateway-start');
-        const gatewayStopBtn = document.getElementById('gateway-stop');
-        const gatewayRefreshBtn = document.getElementById('gateway-refresh');
-        const pairingApproveBtn = document.getElementById('pairing-approve');
+        const assistantStatusEl = document.getElementById('assistant-status');
+        const activationRowEl = document.getElementById('activation-row');
+        const installCodeEl = document.getElementById('install-code');
+        const activateBtn = document.getElementById('activate-btn');
         const chatOutputEl = document.getElementById('chat-output');
         const chatInputEl = document.getElementById('chat-input');
         const chatConnectBtn = document.getElementById('chat-connect');
         const chatSendBtn = document.getElementById('chat-send');
         const chatDisconnectBtn = document.getElementById('chat-disconnect');
-        const chatPortEl = document.getElementById('chat-port');
-        const chatTokenEl = document.getElementById('chat-token');
         let latestUpdateInfo = null;
         let activeAssistantLine = null;
 
@@ -587,17 +471,12 @@
             });
             checkUpdateBtn.addEventListener('click', handleCheckUpdate);
             installUpdateBtn.addEventListener('click', handleInstallUpdate);
-            gatewaySaveBtn.addEventListener('click', handleGatewaySave);
-            gatewayStartBtn.addEventListener('click', handleGatewayStart);
-            gatewayStopBtn.addEventListener('click', handleGatewayStop);
-            gatewayRefreshBtn.addEventListener('click', refreshGateway);
-            pairingApproveBtn.addEventListener('click', handlePairingApprove);
+            activateBtn.addEventListener('click', handleActivate);
             chatConnectBtn.addEventListener('click', handleChatConnect);
             chatSendBtn.addEventListener('click', handleChatSend);
             chatDisconnectBtn.addEventListener('click', handleChatDisconnect);
-            api.onHermesChatEvent((_event, data) => handleChatEvent(data));
-            await loadGatewayConfig();
-            await refreshGateway();
+            api.onAgentChatEvent((_event, data) => handleChatEvent(data));
+            await refreshAssistantStatus();
 
             // Listen for status changes
             api.onAgentStatusChanged((event, data) => {
@@ -822,167 +701,162 @@
             }
         }
 
-        function gatewayPlatform(id, enabledId, values) {
-            const result = { enabled: document.getElementById(enabledId).checked };
-            Object.entries(values).forEach(([key, elementId]) => {
-                const value = document.getElementById(elementId).value.trim();
-                if (value) result[key] = value;
-            });
-            return result;
-        }
-
-        async function loadGatewayConfig() {
+        async function refreshAssistantStatus() {
             try {
-                const result = await api.hermesGatewayGetConfig();
-                const platforms = result.config?.platforms || {};
-                const setPlatform = (name, enabledId, fields) => {
-                    const config = platforms[name] || {};
-                    document.getElementById(enabledId).checked = config.enabled === true;
-                    Object.entries(fields).forEach(([key, elementId]) => {
-                        const value = config[key];
-                        if (value) document.getElementById(elementId).value = value;
-                    });
-                };
-                setPlatform('telegram', 'telegram-enabled', { token: 'telegram-token', home_channel: 'telegram-home' });
-                setPlatform('discord', 'discord-enabled', { token: 'discord-token', home_channel: 'discord-home' });
-                setPlatform('slack', 'slack-enabled', { token: 'slack-token', api_key: 'slack-api-key' });
-                setPlatform('whatsapp', 'whatsapp-enabled', {});
+                const status = await api.agentRuntimeStatus();
+                activationRowEl.hidden = status.activated;
+                chatConnectBtn.disabled = !status.activated || chatDisconnectBtn.disabled === false;
+                if (!status.activated) {
+                    assistantStatusEl.textContent = 'The assistant is not activated on this device. Enter the install code from your administrator.';
+                    return;
+                }
+                const parts = [`Model: ${status.model}`, `Workspace: ${status.workspacePath}`];
+                if (!status.running) parts.unshift('Starting...');
+                if (!status.tokenPersisted) parts.push('This system cannot store the activation securely, so you will need to activate again after restarting the app.');
+                assistantStatusEl.textContent = parts.join(' · ');
             } catch (error) {
-                gatewayMessageEl.textContent = `Unable to load gateway configuration: ${error.message}`;
+                assistantStatusEl.textContent = `Assistant status unavailable: ${error.message}`;
             }
         }
 
-        async function handleGatewaySave() {
-            gatewaySaveBtn.disabled = true;
-            gatewayMessageEl.textContent = 'Saving gateway configuration...';
-            try {
-                const result = await api.hermesGatewaySaveConfig({
-                    platforms: {
-                        telegram: gatewayPlatform('telegram', 'telegram-enabled', { token: 'telegram-token', home_channel: 'telegram-home' }),
-                        discord: gatewayPlatform('discord', 'discord-enabled', { token: 'discord-token', home_channel: 'discord-home' }),
-                        slack: gatewayPlatform('slack', 'slack-enabled', { token: 'slack-token', api_key: 'slack-api-key' }),
-                        whatsapp: gatewayPlatform('whatsapp', 'whatsapp-enabled', {}),
-                    },
-                });
-                gatewayMessageEl.textContent = result.success ? 'Gateway configuration saved.' : (result.message || 'Gateway configuration was not saved.');
-                await refreshGateway();
-            } catch (error) {
-                gatewayMessageEl.textContent = `Save failed: ${error.message}`;
-            } finally {
-                gatewaySaveBtn.disabled = false;
-            }
-        }
-
-        async function refreshGateway() {
-            try {
-                const result = await api.hermesGatewayStatus();
-                gatewayStatusEl.textContent = `Gateway ${result.running ? 'running' : 'stopped'} · Configured: ${result.configured.join(', ') || 'none'}`;
-                gatewayMessageEl.textContent = result.output || '';
-            } catch (error) {
-                gatewayStatusEl.textContent = 'Gateway status unavailable';
-                gatewayMessageEl.textContent = error.message;
-            }
-        }
-
-        async function handleGatewayStart() {
-            gatewayStartBtn.disabled = true;
-            try {
-                const result = await api.hermesGatewayStart();
-                gatewayMessageEl.textContent = result.message || (result.success ? 'Gateway started.' : 'Gateway failed to start.');
-                await refreshGateway();
-            } finally {
-                gatewayStartBtn.disabled = false;
-            }
-        }
-
-        async function handleGatewayStop() {
-            gatewayStopBtn.disabled = true;
-            try {
-                const result = await api.hermesGatewayStop();
-                gatewayMessageEl.textContent = result.message || (result.success ? 'Gateway stopped.' : 'Gateway failed to stop.');
-                await refreshGateway();
-            } finally {
-                gatewayStopBtn.disabled = false;
-            }
-        }
-
-        async function handlePairingApprove() {
-            const code = document.getElementById('pairing-code').value.trim();
-            if (!/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/i.test(code)) {
-                gatewayMessageEl.textContent = 'Enter the 8-character Hermes pairing code (letters exclude I/O and numbers exclude 0/1).';
+        async function handleActivate() {
+            const code = installCodeEl.value.trim();
+            if (!code) {
+                assistantStatusEl.textContent = 'Enter the install code from your administrator.';
                 return;
             }
-            pairingApproveBtn.disabled = true;
+            activateBtn.disabled = true;
+            assistantStatusEl.textContent = 'Activating the assistant...';
             try {
-                const result = await api.hermesPairingApprove('telegram', code);
-                gatewayMessageEl.textContent = result.message || (result.success ? 'Pairing approved.' : 'Pairing was not approved.');
+                const result = await api.agentRuntimeActivate(code);
+                if (!result.success) throw new Error(result.message);
+                installCodeEl.value = '';
+                await refreshAssistantStatus();
+            } catch (error) {
+                assistantStatusEl.textContent = `Activation failed: ${error.message}`;
             } finally {
-                pairingApproveBtn.disabled = false;
+                activateBtn.disabled = false;
             }
         }
 
-        function appendChat(text) {
-            chatOutputEl.textContent += `${chatOutputEl.textContent ? '\n' : ''}${text}`;
+        function appendChat(text, className) {
+            const line = document.createElement('div');
+            line.textContent = text;
+            if (className) line.className = className;
+            if (chatOutputEl.dataset.started !== 'true') {
+                chatOutputEl.textContent = '';
+                chatOutputEl.dataset.started = 'true';
+            }
+            chatOutputEl.appendChild(line);
             chatOutputEl.scrollTop = chatOutputEl.scrollHeight;
         }
 
         function appendAssistantDelta(text) {
             if (!activeAssistantLine) {
-                activeAssistantLine = document.createElement('div');
-                activeAssistantLine.textContent = 'Hermes: ';
-                chatOutputEl.appendChild(activeAssistantLine);
+                appendChat('Assistant: ');
+                activeAssistantLine = chatOutputEl.lastChild;
             }
             activeAssistantLine.textContent += text;
             chatOutputEl.scrollTop = chatOutputEl.scrollHeight;
         }
 
-        function addChatPrompt(data, kind, label, defaultValue = '') {
-            const payload = data?.payload || {};
+        function addPromptBox(message) {
             const prompt = document.createElement('div');
             prompt.className = 'chat-prompt';
-            const message = document.createElement('div');
-            message.textContent = payload.message || payload.question || `Hermes is waiting for ${label}.`;
-            prompt.appendChild(message);
+            const text = document.createElement('div');
+            text.textContent = message;
+            prompt.appendChild(text);
+            chatOutputEl.appendChild(prompt);
+            chatOutputEl.scrollTop = chatOutputEl.scrollHeight;
+            return prompt;
+        }
+
+        const APPROVAL_LABELS = {
+            once: 'Allow once',
+            session: 'Allow for this chat',
+            always: 'Always allow',
+            deny: 'Deny',
+        };
+
+        function addApprovalPrompt(data) {
+            const payload = data?.payload || {};
+            const prompt = addPromptBox(payload.message || 'The assistant is asking for approval.');
+            if (Array.isArray(payload.actions) && payload.actions.length) {
+                const details = document.createElement('details');
+                const summary = document.createElement('summary');
+                summary.textContent = 'Show details';
+                const pre = document.createElement('pre');
+                pre.textContent = JSON.stringify(payload.actions, null, 2);
+                details.append(summary, pre);
+                prompt.appendChild(details);
+            }
+            const buttons = [];
+            for (const choice of payload.choices || Object.keys(APPROVAL_LABELS)) {
+                const button = document.createElement('button');
+                button.className = `btn ${choice === 'deny' ? 'danger' : 'secondary'}`;
+                button.textContent = APPROVAL_LABELS[choice] || choice;
+                button.addEventListener('click', async () => {
+                    buttons.forEach((b) => { b.disabled = true; });
+                    try {
+                        await api.agentChatRespond('approval', choice, undefined, data.session_id);
+                        prompt.remove();
+                        appendChat(`You chose: ${APPROVAL_LABELS[choice] || choice}`, 'chat-tool');
+                    } catch (error) {
+                        buttons.forEach((b) => { b.disabled = false; });
+                        appendChat(`Response failed: ${error.message}`);
+                    }
+                });
+                buttons.push(button);
+                prompt.appendChild(button);
+            }
+        }
+
+        function addClarifyPrompt(data) {
+            const payload = data?.payload || {};
+            const prompt = addPromptBox(payload.question || 'The assistant has a question.');
             const input = document.createElement('input');
-            input.type = kind === 'secret' || kind === 'sudo' ? 'password' : 'text';
-            input.value = defaultValue;
-            input.placeholder = kind === 'approval' ? 'once, session, always, or deny' : 'Your response';
-            prompt.appendChild(input);
+            input.type = 'text';
+            input.placeholder = 'Your answer';
             const submit = document.createElement('button');
-            submit.textContent = 'Respond';
-            submit.addEventListener('click', async () => {
+            submit.className = 'btn secondary';
+            submit.textContent = 'Answer';
+            const send = async () => {
                 submit.disabled = true;
                 try {
-                    const requestId = payload.request_id || payload.clarify_id;
-                    await api.hermesChatRespond(kind, input.value, requestId, data.session_id);
+                    await api.agentChatRespond('clarify', input.value, payload.clarify_id, data.session_id);
                     prompt.remove();
+                    appendChat(`You: ${input.value}`);
                 } catch (error) {
                     submit.disabled = false;
                     appendChat(`Response failed: ${error.message}`);
                 }
-            });
-            prompt.appendChild(submit);
-            chatOutputEl.appendChild(prompt);
+            };
+            submit.addEventListener('click', send);
+            input.addEventListener('keydown', (event) => { if (event.key === 'Enter') send(); });
+            prompt.append(input, submit);
             input.focus();
-            chatOutputEl.scrollTop = chatOutputEl.scrollHeight;
+        }
+
+        function setChatConnected(connected) {
+            chatSendBtn.disabled = !connected;
+            chatDisconnectBtn.disabled = !connected;
+            chatConnectBtn.disabled = connected || !activationRowEl.hidden;
         }
 
         async function handleChatConnect() {
             chatConnectBtn.disabled = true;
-            appendChat('Connecting to Hermes...');
+            appendChat('Connecting to the assistant...');
             try {
-                const port = Number(chatPortEl.value) || 8642;
-                const result = await api.hermesChatConnect(port, chatTokenEl.value.trim() || undefined);
+                const result = await api.agentChatConnect();
                 if (!result.success) throw new Error(result.message);
-                await api.hermesChatCreateSession();
-                chatSendBtn.disabled = false;
-                chatDisconnectBtn.disabled = false;
-                chatTokenEl.value = '';
+                await api.agentChatCreateSession();
+                setChatConnected(true);
                 appendChat('Connected.');
             } catch (error) {
                 chatConnectBtn.disabled = false;
                 appendChat(`Connection failed: ${error.message}`);
             }
+            await refreshAssistantStatus();
         }
 
         async function handleChatSend() {
@@ -992,45 +866,52 @@
             appendChat(`You: ${text}`);
             chatInputEl.value = '';
             try {
-                const result = await api.hermesChatSend(text);
+                const result = await api.agentChatSend(text);
                 if (!result.success) throw new Error(result.message);
             } catch (error) {
                 appendChat(`Send failed: ${error.message}`);
             } finally {
-                chatSendBtn.disabled = false;
+                chatSendBtn.disabled = chatDisconnectBtn.disabled;
             }
         }
 
         function handleChatDisconnect() {
-            api.hermesChatDisconnect();
-            chatSendBtn.disabled = true;
-            chatDisconnectBtn.disabled = true;
-            chatConnectBtn.disabled = false;
+            api.agentChatDisconnect();
+            setChatConnected(false);
             appendChat('Disconnected.');
         }
 
         function handleChatEvent(data) {
             const payload = data?.payload || {};
-            if (data?.type === 'message.start') {
-                activeAssistantLine = null;
-            } else if (data?.type === 'message.delta') {
-                const text = payload.text || payload.content || '';
-                if (text) appendAssistantDelta(text);
-            } else if (data?.type === 'message.complete') {
-                activeAssistantLine = null;
-            } else if (data?.type === 'thinking.delta' || data?.type === 'reasoning.delta') {
-                const text = payload.text || payload.content || '';
-                if (text) appendChat(`Hermes reasoning: ${text}`);
-            } else if (data?.type === 'error') {
-                appendChat(`Hermes error: ${payload.message || 'Unknown gateway error'}`);
-            } else if (data?.type === 'approval.request') {
-                addChatPrompt(data, 'approval', 'approval', 'once');
-            } else if (data?.type === 'secret.request') {
-                addChatPrompt(data, 'secret', 'a secret');
-            } else if (data?.type === 'sudo.request') {
-                addChatPrompt(data, 'sudo', 'the sudo password');
-            } else if (data?.type === 'clarify.request') {
-                addChatPrompt(data, 'clarify', 'clarification');
+            switch (data?.type) {
+                case 'message.start':
+                case 'message.complete':
+                    activeAssistantLine = null;
+                    break;
+                case 'message.delta':
+                    if (payload.text) appendAssistantDelta(payload.text);
+                    break;
+                case 'reasoning.delta':
+                    if (payload.text) appendChat(`Thinking: ${payload.text}`, 'chat-tool');
+                    break;
+                case 'tool.result':
+                    appendChat(`· ${payload.name} ${payload.status === 'error' ? 'failed' : 'done'}`, 'chat-tool');
+                    break;
+                case 'approval.request':
+                    addApprovalPrompt(data);
+                    break;
+                case 'clarify.request':
+                    addClarifyPrompt(data);
+                    break;
+                case 'error':
+                    appendChat(`Assistant error: ${payload.message || 'Unknown error'}`);
+                    break;
+                case 'connection.closed':
+                    if (!chatDisconnectBtn.disabled) {
+                        setChatConnected(false);
+                        appendChat('The assistant stopped. Click Connect to start it again.');
+                    }
+                    break;
             }
         }
 

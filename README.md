@@ -121,16 +121,29 @@ Only one copy of the application runs at a time. Launching it while it is
 already resident in the tray brings its window forward instead of starting a
 second agent.
 
+### AI Assistant
+
+The desktop app includes a local AI assistant (LangChain Deep Agents) that can
+read, and with approval change, files in the user's `Documents/AssetAssistant`
+folder and search the web. An administrator issues a one-time install code
+(`POST /api/v1/agent-installs`); the user enters it under **Novaris Assistant**
+to activate the assistant on that device. AI traffic goes through the backend
+proxy, so no provider keys are stored on the device. See
+[runtime/README.md](runtime/README.md) for how it works.
+
 ## Development
 
 ```bash
 npm run dev
+npm run test-runtime     # Python assistant runtime tests (needs uv)
+npm run test-electron    # Electron integration tests
 ```
 
 ## Building
 
 ```bash
 npm run build
+npm run dist:full        # builds the assistant runtime bundle, then the installer
 ```
 
 ## Logs

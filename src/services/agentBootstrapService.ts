@@ -1,53 +1,23 @@
 import axios from 'axios';
-import { getLogger } from '../utils/logger';
-import { HermesBootstrapPayload } from '../types/hermes';
-import { HermesDetectorService } from './hermesDetectorService';
+import { AgentBootstrapPayload } from '../types/agentRuntime';
 
-export interface HermesBootstrapRequest {
+export interface AgentBootstrapRequest {
   apiUrl: string;
   installCode: string;
   deviceId: number;
 }
 
-export interface HermesBootstrapResult {
-  payload: HermesBootstrapPayload;
-  /**
-   * True when an existing, unmanaged Hermes installation was detected on
-   * this device. Callers MUST skip downloading/installing/spawning the
-   * bundled Hermes runtime when this is true.
-   */
-  skipManagedInstall: boolean;
-}
-
 /**
- * Exchanges a one-time Hermes install code for a locked runtime bootstrap
- * payload. Before contacting the backend, this checks whether Hermes is
- * already installed locally so we never install a second, conflicting
- * instance on top of the user's existing setup — the backend is informed
- * via `existing_hermes_detected` so the install record reflects reality
- * instead of being marked "activated" for a runtime Novaris doesn't manage.
+ * Exchanges a one-time install code for the locked runtime policy and the
+ * install token the local agent runtime uses to reach the backend.
  */
-export class HermesBootstrapService {
-  private logger = getLogger();
-
-  constructor(private detector: HermesDetectorService = new HermesDetectorService()) {}
-
-  async bootstrap(request: HermesBootstrapRequest): Promise<HermesBootstrapResult> {
-    const detection = this.detector.detect();
-
-    if (detection.detected) {
-      this.logger.info(
-        'Skipping managed Hermes installation; existing local Hermes installation detected',
-        { method: detection.method, path: detection.detectedAt }
-      );
-    }
-
+export class AgentBootstrapService {
+  async bootstrap(request: AgentBootstrapRequest): Promise<AgentBootstrapPayload> {
     const response = await axios.post(
-      `${request.apiUrl}/hermes-installs/bootstrap`,
+      `${request.apiUrl.replace(/\/$/, '')}/agent-installs/bootstrap`,
       {
         install_code: request.installCode,
         device_id: request.deviceId,
-        existing_hermes_detected: detection.detected,
       },
       {
         headers: { 'Content-Type': 'application/json' },
@@ -55,15 +25,10 @@ export class HermesBootstrapService {
       }
     );
 
-    const payload = this.toBootstrapPayload(response.data?.data);
-
-    return {
-      payload,
-      skipManagedInstall: detection.detected || payload.existingHermesDetected,
-    };
+    return this.toBootstrapPayload(response.data?.data);
   }
 
-  private toBootstrapPayload(data: any): HermesBootstrapPayload {
+  private toBootstrapPayload(data: any): AgentBootstrapPayload {
     return {
       installId: data.install_id,
       deviceBinding: {
@@ -77,6 +42,11 @@ export class HermesBootstrapService {
       policyVersion: data.policy_version,
       allowedTools: data.allowed_tools ?? [],
       workspacePathRule: data.workspace_path_rule,
+      runtime: data.runtime ?? 'deepagents',
+      model: data.model ?? 'gpt-4o-mini',
+      maxInputTokens: Number(data.max_input_tokens) || 128000,
+      systemPrompt: data.system_prompt ?? '',
+      webSearchEndpointUrl: data.web_search_endpoint_url ?? null,
       releaseMetadata: {
         id: data.release_metadata?.id,
         version: data.release_metadata?.version,
@@ -86,7 +56,6 @@ export class HermesBootstrapService {
         downloadUrl: data.release_metadata?.download_url,
       },
       installToken: data.install_token ?? null,
-      existingHermesDetected: Boolean(data.existing_hermes_detected ?? data.status === 'existing_hermes_detected'),
     };
   }
 }

@@ -38,15 +38,6 @@ if (-not $nodePath) {
 
 Write-Host "Using Node.js at $nodePath" -ForegroundColor Cyan
 
-# Install Hermes through the official upstream installer. The helper performs
-# a local-user detection first and exits without installing when Hermes already
-# exists on this machine.
-Write-Host "Checking for an existing Hermes installation..." -ForegroundColor Yellow
-& "$PSScriptRoot\install-hermes.ps1"
-if ($LASTEXITCODE -ne 0) {
-    throw "Hermes installation failed with exit code $LASTEXITCODE"
-}
-
 # Create installation directory
 Write-Host "Creating installation directory..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null

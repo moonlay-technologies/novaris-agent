@@ -1,22 +1,24 @@
 import axios from 'axios';
 import { getLogger } from '../../dist/utils/logger';
-import { LockedHermesPolicy } from './runtimePolicy';
+import { LockedAgentPolicy } from './runtimePolicy';
 
-/** Periodically proves that the managed Hermes install is still alive. */
-export class HermesHeartbeatService {
+const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+
+/** Periodically proves to the backend that this managed agent install is still alive. */
+export class AgentHeartbeatService {
   private readonly logger = getLogger();
   private timer: NodeJS.Timeout | null = null;
 
-  start(apiUrl: string, apiKey: string, policy: LockedHermesPolicy): void {
+  start(policy: LockedAgentPolicy, installToken: string): void {
     this.stop();
     const send = () => {
-      this.sendHeartbeat(apiUrl, apiKey, policy).catch((error) => {
-        this.logger.warn('Hermes heartbeat failed', { error });
+      this.sendHeartbeat(policy, installToken).catch((error) => {
+        this.logger.warn('Agent heartbeat failed', { error: error.message });
       });
     };
 
     send();
-    this.timer = setInterval(send, 5 * 60 * 1000);
+    this.timer = setInterval(send, HEARTBEAT_INTERVAL_MS);
   }
 
   stop(): void {
@@ -26,13 +28,14 @@ export class HermesHeartbeatService {
     }
   }
 
-  private async sendHeartbeat(apiUrl: string, apiKey: string, policy: LockedHermesPolicy): Promise<void> {
+  private async sendHeartbeat(policy: LockedAgentPolicy, installToken: string): Promise<void> {
     await axios.post(
-      `${apiUrl.replace(/\/$/, '')}/hermes-installs/heartbeat`,
+      `${policy.backendBaseUrl}/api/v1/agent-installs/heartbeat`,
       { install_id: policy.installId },
       {
+        // The install token identifies this exact install, unlike the device-wide API key.
         headers: {
-          'X-API-Key': apiKey,
+          Authorization: `Bearer ${installToken}`,
           'Content-Type': 'application/json',
         },
         timeout: 30000,

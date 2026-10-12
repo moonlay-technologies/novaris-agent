@@ -27,32 +27,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openConfig: () => ipcRenderer.invoke('open-config'),
   openLogs: () => ipcRenderer.invoke('open-logs'),
 
-  // Hermes bootstrap (detects existing local Hermes installs and skips
-  // the managed install flow when one is already present)
-  hermesBootstrap: (installCode: string) => ipcRenderer.invoke('hermes-bootstrap', installCode),
+  // Local AI assistant. The install token and runtime port/token never reach the renderer.
+  agentRuntimeStatus: () => ipcRenderer.invoke('agent-runtime-status'),
+  agentRuntimeActivate: (installCode: string) => ipcRenderer.invoke('agent-runtime-activate', installCode),
 
-  // Hermes gateway management. Secrets are redacted by the main process.
-  hermesGatewayGetConfig: () => ipcRenderer.invoke('hermes-gateway-get-config'),
-  hermesGatewaySaveConfig: (config: unknown) => ipcRenderer.invoke('hermes-gateway-save-config', config),
-  hermesGatewayStatus: () => ipcRenderer.invoke('hermes-gateway-status'),
-  hermesGatewayStart: () => ipcRenderer.invoke('hermes-gateway-start'),
-  hermesGatewayStop: () => ipcRenderer.invoke('hermes-gateway-stop'),
-  hermesGatewayRestart: () => ipcRenderer.invoke('hermes-gateway-restart'),
-  hermesPairingList: () => ipcRenderer.invoke('hermes-pairing-list'),
-  hermesPairingPending: () => ipcRenderer.invoke('hermes-pairing-pending'),
-  hermesPairingApprove: (platform: string, code: string) => ipcRenderer.invoke('hermes-pairing-approve', platform, code),
-  hermesPairingRevoke: (platform: string, userId: string) => ipcRenderer.invoke('hermes-pairing-revoke', platform, userId),
-
-  // Hermes local gateway chat transport. Events are emitted as sanitized protocol payloads.
-  hermesChatConnect: (port?: number, token?: string) => ipcRenderer.invoke('hermes-chat-connect', port, token),
-  hermesChatCreateSession: () => ipcRenderer.invoke('hermes-chat-session-create'),
-  hermesChatSend: (text: string) => ipcRenderer.invoke('hermes-chat-send', text),
-  hermesChatRespond: (type: 'approval' | 'secret' | 'sudo' | 'clarify', value: string, requestId?: string, sessionId?: string) =>
-    ipcRenderer.invoke('hermes-chat-respond', type, value, requestId, sessionId),
-  hermesChatDisconnect: () => ipcRenderer.invoke('hermes-chat-disconnect'),
-  onHermesChatEvent: (callback: (event: any, data: any) => void) => {
-    ipcRenderer.send('hermes-chat-listen');
-    return ipcRenderer.on('hermes-chat-event', callback);
+  // Assistant chat transport. Events are the runtime's protocol payloads.
+  agentChatConnect: () => ipcRenderer.invoke('agent-chat-connect'),
+  agentChatCreateSession: () => ipcRenderer.invoke('agent-chat-session-create'),
+  agentChatSend: (text: string) => ipcRenderer.invoke('agent-chat-send', text),
+  agentChatRespond: (type: 'approval' | 'clarify', value: string, requestId?: string, sessionId?: string) =>
+    ipcRenderer.invoke('agent-chat-respond', type, value, requestId, sessionId),
+  agentChatDisconnect: () => ipcRenderer.invoke('agent-chat-disconnect'),
+  onAgentChatEvent: (callback: (event: any, data: any) => void) => {
+    ipcRenderer.send('agent-chat-listen');
+    return ipcRenderer.on('agent-chat-event', callback);
   },
 
   // Event listeners
