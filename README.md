@@ -64,7 +64,8 @@ Create a `config.json` file in the agent directory:
   "responseActionTimeout": 30,
   "remoteActionsEnabled": false,
   "responseActionsDryRun": true,
-  "logLevel": "info"
+  "logLevel": "info",
+  "autoStart": true
 }
 ```
 
@@ -83,7 +84,42 @@ Or use environment variables:
 - `NOVARIS_RESPONSE_ACTION_TIMEOUT` - Response action command timeout in seconds
 - `NOVARIS_REMOTE_ACTIONS_ENABLED` - Enable real endpoint actions (defaults to false)
 - `NOVARIS_RESPONSE_ACTIONS_DRY_RUN` - Acknowledge actions without execution when true
+- `NOVARIS_AUTO_START` - Launch the application at login and run in the background (true/false)
 - `NOVARIS_LOG_LEVEL` - Log level (error, warn, info, debug)
+- `NOVARIS_INSTALL_DIR` - Override the directory holding `config.json` and `logs/`
+
+### Background Operation
+
+A configured device reports on its own, with nobody opening anything. There are
+two independent layers, and either is enough:
+
+**Background service (starts at boot).** The platform installers under
+`installers/` register the agent to start at boot under the system account, so
+the device reports before anyone logs in. See `installers/README.md` for the
+mechanism on each platform and how to manage it.
+
+**Desktop application (starts at login).** The application registers itself as
+an OS login item and comes back up after a reboot. A login-triggered launch
+stays in the system tray: it starts the agent without opening a window and
+without raising any dialog, since nobody is waiting on it.
+
+`autoStart` is switched on automatically the first time the agent manages to
+start, which is the first time this device is genuinely configured. Whatever
+the source of the configuration - an installer, a hand-edited `config.json` or
+the desktop UI - the device reports after every login from then on.
+
+Use the *Start automatically in the background at login* checkbox in the
+application to turn it off. That choice is recorded as
+`autoStartUserManaged: true` and is never overridden afterwards.
+
+**When both are installed**, the application detects the running service and
+stays idle rather than starting its own agent, so the backend never receives
+two sets of reports for one asset tag. The window shows *Running as a service*
+and its Start button is disabled.
+
+Only one copy of the application runs at a time. Launching it while it is
+already resident in the tray brings its window forward instead of starting a
+second agent.
 
 ## Development
 

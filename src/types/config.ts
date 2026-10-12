@@ -68,6 +68,10 @@ export interface AgentConfig {
   collectZeekLogs: boolean;
   zeekLogDir?: string; // override the platform-conventional Zeek log directory
   zeekLogsInterval: number; // in seconds
+  // Set once the user makes their own choice about autoStart. While unset the
+  // agent may turn autoStart on by itself, the first time the device is fully
+  // configured; afterwards the user's choice is left alone.
+  autoStartUserManaged?: boolean;
 }
 
 export const DEFAULT_CONFIG: Partial<AgentConfig> = {

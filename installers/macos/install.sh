@@ -20,16 +20,36 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Node runs the agent, so it has to be present before anything is registered
+NODE_PATH=$(command -v node || true)
+if [ -z "$NODE_PATH" ]; then
+    echo "Error: Node.js was not found. Install Node.js and run this script again."
+    exit 1
+fi
+echo "Using Node.js at $NODE_PATH"
+
 "$SCRIPT_DIR/../install-hermes.sh"
 
-# Create installation directory
+# Create installation directory, including the log directory the daemon
+# redirects its output into.
 echo "Creating installation directory..."
 mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR/logs"
 
 # Copy files
 echo "Copying files..."
 cp -R . "$INSTALL_DIR/" 2>/dev/null || true
 chmod +x "$INSTALL_DIR/dist/index.js"
+
+# A daemon pointing at a missing script would fail at every boot
+if [ ! -f "$INSTALL_DIR/dist/index.js" ]; then
+    echo "Error: $INSTALL_DIR/dist/index.js is missing. Run this script from a build that contains dist/index.js."
+    exit 1
+fi
+
+if [ ! -d "$INSTALL_DIR/node_modules" ]; then
+    echo "Warning: node_modules is missing from $INSTALL_DIR. The agent cannot start without its dependencies."
+fi
 
 # Create config file if it doesn't exist
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -38,6 +58,7 @@ if [ ! -f "$CONFIG_FILE" ]; then
 {
   "apiUrl": "http://localhost:3000/api/v1",
   "apiKey": "",
+  "assetTag": "",
   "collectInterval": 300,
   "reportInterval": 300,
   "retryAttempts": 3,
@@ -45,12 +66,12 @@ if [ ! -f "$CONFIG_FILE" ]; then
   "logLevel": "info"
 }
 EOF
-    echo "Please edit $CONFIG_FILE and set your API URL and API Key"
+    echo "Please edit $CONFIG_FILE and set apiUrl, apiKey and assetTag"
 fi
 
-# Create LaunchDaemon plist
+# Create LaunchDaemon plist. RunAtLoad starts it at boot, before any user logs
+# in, and KeepAlive brings it back if it ever exits.
 echo "Creating LaunchDaemon..."
-NODE_PATH=$(which node)
 cat > "$LAUNCH_DAEMON" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -86,8 +107,9 @@ EOF
 chown root:wheel "$LAUNCH_DAEMON"
 chmod 644 "$LAUNCH_DAEMON"
 
-# Load the service
+# Load the daemon, replacing any copy left by a previous install
 echo "Loading LaunchDaemon..."
+launchctl unload "$LAUNCH_DAEMON" 2>/dev/null || true
 launchctl load -w "$LAUNCH_DAEMON" 2>/dev/null || launchctl load "$LAUNCH_DAEMON"
 
 echo ""
@@ -95,8 +117,9 @@ echo "Installation complete!"
 echo "Installation directory: $INSTALL_DIR"
 echo "Configuration file: $CONFIG_FILE"
 echo ""
+echo "The agent runs in the background and starts automatically at boot."
+echo ""
 echo "Next steps:"
-echo "1. Edit $CONFIG_FILE and set your API URL and API Key"
-echo "2. Start the service: sudo launchctl load -w $LAUNCH_DAEMON"
+echo "1. Edit $CONFIG_FILE and set apiUrl, apiKey and assetTag"
+echo "2. Restart the agent: sudo launchctl kickstart -k system/$SERVICE_NAME"
 echo "3. Check status: launchctl list | grep $SERVICE_NAME"
-
