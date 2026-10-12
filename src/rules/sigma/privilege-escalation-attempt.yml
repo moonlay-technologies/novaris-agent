@@ -1,0 +1,19 @@
+title: Privilege Escalation Attempt
+id: 82571222-378a-4e5e-9e87-a49deef6c663
+event_type: privilege_escalation_attempt
+status: stable
+level: critical
+description: Matches failed sudo attempts or explicit privilege-escalation/token-elevation indicators.
+logsource:
+  category: application
+  product: novaris-agent
+detection:
+  selection_sudo_failure:
+    message|contains|all:
+      - 'sudo:'
+      - 'incorrect password'
+  selection_other:
+    message|contains:
+      - 'privilege escalation'
+      - 'token elevation'
+  condition: selection_sudo_failure or selection_other

@@ -1,9 +1,14 @@
+export type AgentMode = 'endpoint' | 'network_gateway';
+
 export interface AgentConfig {
   apiUrl: string;
   apiKey: string;
   assetTag: string; // Required: Asset tag to identify the device
   deviceId?: number;
   hostname?: string;
+  // Left unset until the first-run picker writes it (like assetTag/apiKey) - its absence is what
+  // gates showing that picker, so it must NOT get a DEFAULT_CONFIG value.
+  agentMode?: AgentMode;
   collectInterval: number; // in seconds
   reportInterval: number; // in seconds
   retryAttempts: number;
@@ -28,6 +33,11 @@ export interface AgentConfig {
   };
   collectProcesses: boolean;
   processInterval: number; // in seconds
+  collectYaraScan: boolean;
+  yaraScanInterval: number; // in seconds
+  yaraScanPaths?: string[]; // overrides the platform-default scan directories when set
+  yaraScanMaxFiles: number;
+  yaraScanMaxFileSizeBytes: number;
   pollResponseActions: boolean;
   responseActionsInterval: number; // in seconds
   responseActionTimeout: number; // in seconds
@@ -36,6 +46,28 @@ export interface AgentConfig {
   logLevel: 'error' | 'warn' | 'info' | 'debug';
   logFile?: string;
   autoStart: boolean; // Whether to launch the application automatically on system startup
+
+  // --- Network Gateway mode (agentMode === 'network_gateway') ---
+  // These flags exist independently of agentMode - the mode picker just sets sensible
+  // defaults when chosen; agentService.ts checks each flag the same way it checks every
+  // other collect* flag, with no special-cased mode branch.
+  collectSyslog: boolean;
+  syslogPort: number;
+  syslogInterval: number; // in seconds - how often batched syslog messages are evaluated/reported
+
+  collectSnmp: boolean;
+  snmpTargets: string[];
+  snmpCommunity: string;
+  snmpInterval: number; // in seconds
+
+  collectActiveDiscovery: boolean;
+  activeDiscoveryInterval: number; // in seconds
+  /** Persisted MAC allowlist so re-detecting the same device doesn't re-fire an event every cycle. */
+  knownNetworkDevices?: string[];
+
+  collectZeekLogs: boolean;
+  zeekLogDir?: string; // override the platform-conventional Zeek log directory
+  zeekLogsInterval: number; // in seconds
   // Set once the user makes their own choice about autoStart. While unset the
   // agent may turn autoStart on by itself, the first time the device is fully
   // configured; afterwards the user's choice is left alone.
@@ -66,6 +98,10 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   securityEventsMinSeverity: 'warning',
   collectProcesses: true,
   processInterval: 60, // 1 minute
+  collectYaraScan: true,
+  yaraScanInterval: 86400, // 24 hours - a real content scan is far more expensive than the other periodic checks
+  yaraScanMaxFiles: 500,
+  yaraScanMaxFileSizeBytes: 25 * 1024 * 1024, // 25MB
   pollResponseActions: true,
   responseActionsInterval: 60, // 1 minute
   responseActionTimeout: 30, // 30 seconds
@@ -73,5 +109,19 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   responseActionsDryRun: true,
   logLevel: 'info',
   autoStart: false, // Application startup at login disabled by default
+
+  // Network Gateway mode flags all default off - the first-run "Network Gateway Agent"
+  // picker is what turns these on; existing/default installs see zero behavior change.
+  collectSyslog: false,
+  syslogPort: 514,
+  syslogInterval: 60, // 1 minute
+  collectSnmp: false,
+  snmpTargets: [],
+  snmpCommunity: 'public',
+  snmpInterval: 300, // 5 minutes
+  collectActiveDiscovery: false,
+  activeDiscoveryInterval: 900, // 15 minutes
+  collectZeekLogs: false, // off even in gateway mode by default - requires Zeek already installed by the operator
+  zeekLogsInterval: 120, // 2 minutes
 };
 

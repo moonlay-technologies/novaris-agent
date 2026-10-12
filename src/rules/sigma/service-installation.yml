@@ -1,0 +1,16 @@
+title: New Service Installation
+id: 30edb2e7-a9bc-419e-b409-c3cbc0d49f41
+event_type: service_installation
+status: stable
+level: medium
+description: Matches new Windows/Linux service installation or creation events, a common persistence technique.
+logsource:
+  category: application
+  product: novaris-agent
+detection:
+  selection:
+    message|contains:
+      - 'service installed'
+      - 'new service'
+      - 'service creation'
+  condition: selection

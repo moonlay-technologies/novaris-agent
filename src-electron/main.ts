@@ -11,6 +11,7 @@ import { HealthMetricsCollector } from '../dist/collectors/healthMetricsCollecto
 import { AgentRuntimeManager } from './agentRuntime/agentRuntimeManager';
 import { AgentRuntimeSupervisor } from './agentRuntime/supervisor';
 import { AgentChatResponseType, AgentChatService } from './agentRuntime/chatService';
+import { ProcessRegistryService } from '../dist/services/processRegistryService';
 import { AutoStartService } from './startup/autoStartService';
 import { BackgroundServiceDetector, BackgroundServiceStatus } from './startup/backgroundServiceDetector';
 
@@ -42,6 +43,8 @@ const agentRuntime = new AgentRuntimeManager({
   }),
 });
 const agentChatService = new AgentChatService(() => agentRuntime.endpoint());
+const processRegistry = new ProcessRegistryService(initialConfig.logFile);
+processRegistry.registerDefaults(initialConfig);
 const autoStartService = new AutoStartService();
 const backgroundServiceDetector = new BackgroundServiceDetector();
 
@@ -316,8 +319,10 @@ function revealMainWindow(): void {
 function createWindow(options: { startHidden?: boolean } = {}): void {
   // Create the browser window
   mainWindow = new BrowserWindow({
-    width: 560,
-    height: 860,
+    width: 1180,
+    height: 760,
+    minWidth: 960,
+    minHeight: 640,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -596,7 +601,7 @@ async function startAgent(options: StartAgentOptions = {}): Promise<void> {
       return;
     }
 
-    agentService = new AgentService(config);
+    agentService = new AgentService(config, processRegistry);
     await agentService.start();
     isAgentRunning = true;
 
@@ -696,6 +701,9 @@ ipcMain.handle('get-agent-status', async () => {
 
   return buildAgentStatus();
 });
+
+ipcMain.handle('get-process-registry', () => processRegistry.snapshot());
+ipcMain.handle('get-agent-logs', (_event, lines?: number) => processRegistry.readLogs(lines));
 
 ipcMain.handle('get-app-version', () => {
   return {
@@ -814,7 +822,7 @@ ipcMain.handle('save-config', async (event, newConfig: Partial<AgentConfig>) => 
     // saveConfig merges into the file on disk, so a still-incomplete config can
     // be completed here rather than being rejected by loadConfig first. Only
     // the field names are logged: the payload carries the API key.
-    saveConfig(newConfig);
+    saveConfig({ ...newConfig, ...(typeof newConfig.autoStart === "boolean" ? { autoStartUserManaged: true } : {}) });
     logger.info('Configuration saved', { fields: Object.keys(newConfig) });
 
     // Match the OS login item to the configuration that was just written

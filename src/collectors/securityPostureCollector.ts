@@ -3,6 +3,14 @@ import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { SecurityPostureReport } from '../types/device';
 import { getLogger } from '../utils/logger';
+import { queryOsquery } from '../utils/osquery';
+
+type DiskEncryptionVolume = { volume: string; encrypted: boolean };
+type DiskEncryptionResult = {
+  enabled: boolean;
+  method: string | null;
+  volumes: DiskEncryptionVolume[] | null;
+};
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -63,10 +71,6 @@ export class SecurityPostureCollector {
       try {
         $fw = Get-NetFirewallProfile -PolicyStore ActiveStore | Select-Object Name, Enabled
       } catch {}
-      $bl = @()
-      try {
-        $bl = Get-BitLockerVolume | Select-Object MountPoint, VolumeStatus, ProtectionStatus, EncryptionMethod
-      } catch {}
       $tpm = $null
       try { $tpm = Get-Tpm | Select-Object TpmPresent, TpmReady, ManagedAuthLevel } catch {}
       $secureBoot = $null
@@ -81,7 +85,6 @@ export class SecurityPostureCollector {
         defender_signature_age_days = if ($mp) { [int]$mp.AntivirusSignatureAge } else { $null }
         security_center_antivirus = $avProducts
         firewall_profiles = $fw | ForEach-Object { [pscustomobject]@{ name=$_.Name; enabled=[bool]$_.Enabled } }
-        bitlocker = $bl | ForEach-Object { [pscustomobject]@{ volume=$_.MountPoint; volume_status=$_.VolumeStatus; protection_status=$_.ProtectionStatus; method=$_.EncryptionMethod } }
         tpm_present = if ($tpm) { [bool]$tpm.TpmPresent } else { $null }
         tpm_ready = if ($tpm) { [bool]$tpm.TpmReady } else { $null }
         secure_boot_enabled = if ($secureBoot -ne $null) { [bool]$secureBoot } else { $null }
@@ -101,20 +104,6 @@ export class SecurityPostureCollector {
         : [];
       const enabledProfiles = firewallProfiles.filter((p) => p.enabled).map((p) => p.name).filter(Boolean);
       const firewallEnabled = enabledProfiles.length > 0;
-
-      const bitlocker: Array<{ volume?: string; volume_status?: string; protection_status?: string; method?: string }> =
-        Array.isArray(parsed?.bitlocker) ? parsed.bitlocker : [];
-      const volumes = bitlocker.map((b) => ({
-        volume: b.volume || 'unknown',
-        encrypted:
-          String(b.protection_status || '').toLowerCase() === 'on' ||
-          String(b.volume_status || '').toLowerCase().includes('fully'),
-      }));
-      const encryptedVolumes = volumes.filter((v) => v.encrypted);
-      const diskEncryptionEnabled = encryptedVolumes.length > 0;
-      const diskEncryptionMethod =
-        bitlocker.find((b) => b.method && (String(b.protection_status || '').toLowerCase() === 'on'))?.method ||
-        null;
 
       const securityCenterProducts: Array<{ displayName?: string; productState?: number; pathToSignedProductExe?: string }> =
         Array.isArray(parsed?.security_center_antivirus)
@@ -143,6 +132,8 @@ export class SecurityPostureCollector {
       const antivirusProductName =
         productNames.length > 0 ? productNames.join(', ') : parsed?.antivirus_product ?? null;
 
+      const diskEncryption = await this.collectWindowsDiskEncryptionViaOsquery();
+
       return {
         antivirusInstalled,
         antivirusEnabled,
@@ -150,9 +141,9 @@ export class SecurityPostureCollector {
         antivirusProductName,
         firewallEnabled,
         firewallProfile: enabledProfiles.length ? enabledProfiles.join(', ') : null,
-        diskEncryptionEnabled,
-        diskEncryptionMethod,
-        diskEncryptionVolumes: volumes.length ? volumes : null,
+        diskEncryptionEnabled: diskEncryption.enabled,
+        diskEncryptionMethod: diskEncryption.method,
+        diskEncryptionVolumes: diskEncryption.volumes,
         patchMissingCritical: null,
         patchPendingUpdates: null,
         patchLastCheckedAt: null,
@@ -174,6 +165,25 @@ export class SecurityPostureCollector {
       });
       return { ...DEFAULT_POSTURE, metadata: { platform: 'windows' } };
     }
+  }
+
+  private async collectWindowsDiskEncryptionViaOsquery(): Promise<DiskEncryptionResult> {
+    const rows = await queryOsquery<{ drive_letter?: string; protection_status?: string; encryption_method?: string }>(
+      'SELECT drive_letter, protection_status, encryption_method FROM bitlocker_info'
+    );
+
+    const volumes: DiskEncryptionVolume[] = rows.map((row) => ({
+      volume: row.drive_letter || 'unknown',
+      encrypted: row.protection_status === '1',
+    }));
+    const encryptedVolumes = volumes.filter((v) => v.encrypted);
+    const method = rows.find((row) => row.protection_status === '1' && row.encryption_method)?.encryption_method || null;
+
+    return {
+      enabled: encryptedVolumes.length > 0,
+      method,
+      volumes: volumes.length ? volumes : null,
+    };
   }
 
   private async collectMac(): Promise<Omit<SecurityPostureReport, 'collectedAt'>> {
@@ -243,13 +253,10 @@ export class SecurityPostureCollector {
   }
 
   private async collectMacFileVault(): Promise<boolean> {
-    try {
-      const { stdout } = await execAsync('fdesetup status', { timeout: 15000 });
-      return (stdout || '').toLowerCase().includes('filevault is on');
-    } catch (error: any) {
-      this.logger.warn('macOS FileVault status collection failed', { error: error?.message || error });
-      return false;
-    }
+    const rows = await queryOsquery<{ filevault_status?: string; encryption_status?: string }>(
+      'SELECT filevault_status, encryption_status FROM disk_encryption'
+    );
+    return rows.some((row) => row.filevault_status === 'on' || row.encryption_status === 'encrypted');
   }
 
   private async collectLinuxAntivirus(): Promise<{
@@ -326,22 +333,17 @@ export class SecurityPostureCollector {
     diskEncryptionEnabled: boolean;
     volumes: Array<{ volume: string; encrypted: boolean }> | null;
   }> {
-    try {
-      const { stdout } = await execAsync('lsblk -o NAME,FSTYPE -n', { timeout: 10000 });
-      const lines = (stdout || '').split('\n').map((l) => l.trim()).filter(Boolean);
-      const encrypted = lines.filter((l) => l.toLowerCase().includes('crypto_luks'));
-      const volumes = encrypted.map((l) => {
-        const [name] = l.split(/\s+/);
-        return { volume: name || 'unknown', encrypted: true };
-      });
-      return {
-        diskEncryptionEnabled: volumes.length > 0,
-        volumes: volumes.length ? volumes : null,
-      };
-    } catch (error: any) {
-      this.logger.warn('Linux disk encryption detection failed', { error: error?.message || error });
-      return { diskEncryptionEnabled: false, volumes: null };
-    }
+    const rows = await queryOsquery<{ name?: string; encryption_status?: string }>(
+      'SELECT name, encryption_status FROM disk_encryption'
+    );
+    const volumes = rows.map((row) => ({
+      volume: row.name || 'unknown',
+      encrypted: row.encryption_status === 'encrypted',
+    }));
+    return {
+      diskEncryptionEnabled: volumes.some((v) => v.encrypted),
+      volumes: volumes.length ? volumes : null,
+    };
   }
 
   private isSecurityCenterAvActive(productState: unknown): boolean {

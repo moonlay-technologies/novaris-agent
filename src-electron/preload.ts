@@ -9,6 +9,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startAgent: () => ipcRenderer.invoke('start-agent'),
   stopAgent: () => ipcRenderer.invoke('stop-agent'),
   getAgentStatus: () => ipcRenderer.invoke('get-agent-status'),
+  getProcessRegistry: () => ipcRenderer.invoke('get-process-registry'),
+  getAgentLogs: (lines?: number) => ipcRenderer.invoke('get-agent-logs', lines),
+  getConfig: () => ipcRenderer.invoke('get-config'),
+  saveConfig: (config: unknown) => ipcRenderer.invoke('save-config', config),
 
   // System info
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),

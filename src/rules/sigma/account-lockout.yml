@@ -1,0 +1,16 @@
+title: Account Lockout
+id: 53f10c2d-401a-4f33-82fa-a100eb129e7c
+event_type: account_lockout
+status: stable
+level: medium
+description: Matches account lockout events, typically following repeated failed logon attempts.
+logsource:
+  category: application
+  product: novaris-agent
+detection:
+  selection:
+    message|contains:
+      - 'account locked'
+      - 'user lockout'
+      - 'too many failed logon attempts'
+  condition: selection

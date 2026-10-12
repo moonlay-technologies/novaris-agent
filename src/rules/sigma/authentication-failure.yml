@@ -1,0 +1,17 @@
+title: Authentication Failure Detected
+id: 0e23653f-ca15-4c11-8710-a6b4a2cc0aec
+event_type: authentication_failure
+status: stable
+level: medium
+description: Matches failed login/authentication attempts in OS logs.
+logsource:
+  category: application
+  product: novaris-agent
+detection:
+  selection:
+    message|contains:
+      - 'login failed'
+      - 'failed password'
+      - 'authentication failed'
+      - 'invalid user'
+  condition: selection

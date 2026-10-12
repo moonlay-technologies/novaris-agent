@@ -1,0 +1,16 @@
+title: Firewall Disabled
+id: 5216b78f-1485-4fe1-9cf5-3e3251ffd957
+event_type: firewall_disabled
+status: stable
+level: high
+description: Matches indicators that the host firewall has been disabled.
+logsource:
+  category: application
+  product: novaris-agent
+detection:
+  selection:
+    message|contains:
+      - 'firewall disabled'
+      - 'windows firewall has been turned off'
+      - 'ufw inactive'
+  condition: selection

@@ -1,13 +1,16 @@
 import axios, { AxiosInstance } from 'axios';
 import { exec } from 'child_process';
 import * as os from 'os';
+import * as path from 'path';
 import { promisify } from 'util';
 import { AgentConfig } from '../types/config';
 import { ResponseAction, ResponseActionExecutionResult, ResponseActionType } from '../types/device';
 import { getLogger } from '../utils/logger';
+import { scanPath as runYaraScan } from '../utils/yara';
 
 const execAsync = promisify(exec);
 const MAX_OUTPUT_LENGTH = 2000;
+const YARA_RULES_DIR = path.join(__dirname, '../rules/yara');
 
 function truncateOutput(value: string): string {
   if (value.length <= MAX_OUTPUT_LENGTH) {
@@ -179,7 +182,7 @@ export class ResponseActionService {
   }
 
   private isAllowlisted(actionType: ResponseActionType): boolean {
-    return ['collect_diagnostics', 'kill_process', 'enable_firewall', 'isolate_network', 'restart_device'].includes(actionType);
+    return ['collect_diagnostics', 'kill_process', 'enable_firewall', 'isolate_network', 'restart_device', 'scan_path'].includes(actionType);
   }
 
   private async executeAllowlistedAction(action: ResponseAction): Promise<Record<string, unknown>> {
@@ -194,9 +197,26 @@ export class ResponseActionService {
         throw new Error('isolate_network is blocked until an explicit network isolation policy is enabled.');
       case 'restart_device':
         return this.restartDevice(action.parameters);
+      case 'scan_path':
+        return this.scanPath(action.parameters);
       default:
         throw new Error(`Unsupported action type "${action.actionType}"`);
     }
+  }
+
+  private async scanPath(parameters?: Record<string, unknown> | null): Promise<Record<string, unknown>> {
+    const targetPath = typeof parameters?.path === 'string' ? parameters.path : null;
+    if (!targetPath) {
+      throw new Error('scan_path requires a "path" parameter');
+    }
+
+    const matches = await runYaraScan(targetPath, YARA_RULES_DIR);
+
+    return {
+      target_path: targetPath,
+      match_count: matches.length,
+      matches,
+    };
   }
 
   private async restartDevice(parameters?: Record<string, unknown> | null): Promise<Record<string, unknown>> {

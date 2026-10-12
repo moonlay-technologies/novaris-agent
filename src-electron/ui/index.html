@@ -1,922 +1,176 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Novaris Agent</title>
-    <link rel="icon" type="image/png" href="../assets/favicon.png">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Novaris Agent</title>
+<link rel="icon" type="image/png" href="../assets/favicon.png">
+<style>
+:root{--primary:#0f6b4f;--primary-hover:#0b573f;--primary-soft:#e2f3ec;--accent:#18a673;--sidebar:#13241e;--sidebar-hover:#1c342b;--sidebar-active:#244b3d;--canvas:#f5f7f6;--surface:#fff;--subtle:#f0f4f2;--border:#d9e1dd;--border-strong:#b8c5bf;--text:#17201c;--muted:#5c6b64;--success:#18794e;--success-soft:#e4f5ec;--warning:#8a5c00;--warning-soft:#fff4d6;--danger:#b42318;--danger-soft:#fdecea;--info:#1769aa;--info-soft:#e8f2fc;--focus:#2f80ed}
+*{box-sizing:border-box}[hidden]{display:none!important}html,body{height:100%;margin:0;overflow:hidden}body{font:14px/1.5 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:var(--canvas)}button,input,textarea,select{font:inherit;color:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.55}button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--focus);outline-offset:2px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.app{display:grid;grid-template-columns:224px minmax(736px,1fr);height:100vh;min-width:960px;min-height:640px}.sidebar{background:var(--sidebar);color:#f5faf7;display:flex;flex-direction:column;padding:16px 12px;overflow:hidden}.logo-plate{height:64px;background:#fff;border-radius:8px;display:flex;align-items:center;padding:10px 12px;margin:0 4px 24px}.logo-plate img{display:block;width:168px;height:auto;max-height:40px;object-fit:contain}.nav{display:flex;flex-direction:column;gap:4px}.nav button{height:44px;border:0;border-radius:8px;background:transparent;color:#dce8e3;display:flex;align-items:center;gap:12px;padding:0 12px;text-align:left;font-weight:600}.nav button:hover{background:var(--sidebar-hover);color:#fff}.nav button.active{background:var(--sidebar-active);color:#fff;box-shadow:inset 3px 0 var(--accent)}.nav-icon{width:20px;text-align:center;font-size:17px}.sidebar-foot{margin-top:auto;padding:16px 10px 4px;border-top:1px solid #294039;color:#afc1ba;font-size:12px}.sidebar-foot strong{display:block;color:#e6f1ed;margin-bottom:3px}.update-side{color:#8de0bd;margin-top:6px}.workspace{display:grid;grid-template-rows:56px minmax(0,1fr);min-width:0}.topbar{background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;gap:16px}.device-context{min-width:0}.device-context strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.device-context small{color:var(--muted)}.top-status{display:flex;align-items:center;gap:8px;position:relative}.action-menu{position:absolute;right:0;top:42px;z-index:30;width:180px;background:#fff;border:1px solid var(--border);border-radius:9px;padding:6px;box-shadow:0 10px 28px rgba(15,34,27,.18)}.action-menu button{width:100%;border:0;background:transparent;border-radius:6px;padding:9px 10px;text-align:left}.action-menu button:hover{background:var(--subtle)}.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 9px;font-size:12px;font-weight:650;white-space:nowrap}.badge:before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}.badge.success{background:var(--success-soft);color:var(--success)}.badge.danger{background:var(--danger-soft);color:var(--danger)}.badge.warning{background:var(--warning-soft);color:var(--warning)}.badge.neutral{background:#e9eeeb;color:var(--muted)}.badge.info{background:var(--info-soft);color:var(--info)}.icon-btn{width:36px;height:36px;border:1px solid var(--border);border-radius:8px;background:#fff}.page-wrap{position:relative;overflow:hidden}.page{display:none;height:100%;overflow:auto;padding:24px}.page.active{display:block}.page-inner{max-width:1120px;margin:0 auto}.page-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:20px}.page-head h1{font-size:24px;line-height:1.25;margin:0 0 4px;letter-spacing:-.015em}.page-head p{margin:0;color:var(--muted)}.actions,.toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.btn{min-height:36px;border:1px solid var(--border-strong);border-radius:8px;background:#fff;padding:7px 12px;font-weight:650;display:inline-flex;align-items:center;justify-content:center;gap:7px}.btn:hover:not(:disabled){background:var(--subtle)}.btn.primary{min-height:44px;background:var(--primary);border-color:var(--primary);color:#fff}.btn.primary:hover:not(:disabled){background:var(--primary-hover)}.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}.btn.ghost{border-color:transparent;background:transparent;color:var(--primary)}.btn.small{min-height:32px;padding:5px 9px;font-size:12px}.spinner{width:14px;height:14px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.grid-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}.grid-2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;box-shadow:0 1px 2px rgba(15,34,27,.03)}.card h2{font-size:17px;margin:0 0 4px}.card h3{font-size:15px;margin:0}.card-label{color:var(--muted);font-size:12px;font-weight:650;text-transform:uppercase;letter-spacing:.04em}.status-value{font-size:18px;font-weight:700;margin:8px 0 2px}.muted{color:var(--muted)}.small{font-size:12px}.section{margin-top:20px}.banner{display:flex;align-items:flex-start;gap:12px;border:1px solid;padding:13px 15px;border-radius:10px;margin-bottom:16px}.banner.warning{background:var(--warning-soft);border-color:#ead39d;color:#684600}.banner.danger{background:var(--danger-soft);border-color:#efb6b0;color:#7d1c14}.banner.info{background:var(--info-soft);border-color:#b9d6ef;color:#125283}.banner.success{background:var(--success-soft);border-color:#b8dfca;color:#11633f}.banner .grow{flex:1}.banner strong{display:block}.link-button{border:0;background:none;color:var(--primary);font-weight:650;padding:0;text-decoration:underline}.details{display:grid;grid-template-columns:150px 1fr;gap:10px 20px;margin:16px 0 0}.details dt{color:var(--muted)}.details dd{margin:0;font-weight:600;min-width:0;overflow-wrap:anywhere}.table-card{background:#fff;border:1px solid var(--border);border-radius:12px;overflow:hidden}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--border);vertical-align:top}th{font-size:12px;color:var(--muted);background:var(--subtle);font-weight:700}tbody tr:last-child td{border-bottom:0}.group-row td{background:#eaf2ef;color:var(--primary);font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.04em;padding:8px 12px}.process-name strong{display:block}.process-name small,.error-line{display:block;color:var(--muted);margin-top:2px}.error-line{color:var(--danger);max-width:240px}.switch{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}.switch input{width:34px;height:18px;accent-color:var(--primary)}.filter-btn.active{background:var(--primary-soft);border-color:#9acdb9;color:var(--primary)}.field{display:flex;flex-direction:column;gap:5px;min-width:0}.field>span,.field>label{font-size:13px;font-weight:650}.field input,.field textarea,.field select,.search{width:100%;min-height:38px;border:1px solid var(--border-strong);border-radius:8px;background:#fff;padding:8px 10px}.field textarea{resize:vertical}.field small{color:var(--muted)}.field .error{color:var(--danger)}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.form-grid .wide{grid-column:1/-1}.settings-layout{display:grid;grid-template-columns:180px minmax(0,720px);gap:24px}.subnav{display:flex;flex-direction:column;gap:4px;position:sticky;top:0;align-self:start}.subnav button{border:0;background:transparent;text-align:left;border-radius:7px;padding:9px 10px}.subnav button.active{background:var(--primary-soft);color:var(--primary);font-weight:700}.settings-section{display:none}.settings-section.active{display:block}.settings-section .card{margin-bottom:16px}.settings-section h2{margin-bottom:4px}.settings-footer{position:sticky;bottom:-24px;background:rgba(245,247,246,.96);border-top:1px solid var(--border);padding:12px 0 0;margin-top:20px;display:flex;justify-content:space-between;align-items:center;backdrop-filter:blur(6px)}details.advanced{border-top:1px solid var(--border);margin-top:16px;padding-top:12px}details.advanced summary{cursor:pointer;font-weight:650;color:var(--primary)}.chat-page{padding-bottom:0}.chat-layout{height:calc(100% - 78px);min-height:470px;background:#fff;border:1px solid var(--border);border-radius:12px;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden}.chat-connect{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:end;gap:10px}.chat-connect .field{width:180px}.conversation{overflow:auto;padding:20px;background:#f8faf9}.empty-chat{text-align:center;color:var(--muted);padding:70px 20px}.message{max-width:74%;margin:0 0 14px}.message .bubble{background:#fff;border:1px solid var(--border);border-radius:10px;padding:10px 12px;white-space:pre-wrap;overflow-wrap:anywhere}.message.operator{margin-left:auto}.message.operator .bubble{background:var(--primary);border-color:var(--primary);color:#fff}.message .author{font-size:11px;color:var(--muted);margin-bottom:3px}.message.operator .author{text-align:right}.request-card{background:var(--warning-soft);border:1px solid #e6c879;border-radius:10px;padding:14px;margin:0 0 14px;max-width:620px}.request-card .field{margin:10px 0}.composer{padding:12px 16px;border-top:1px solid var(--border);background:#fff}.composer textarea{width:100%;min-height:64px;max-height:130px;resize:vertical;border:1px solid var(--border-strong);border-radius:8px;padding:10px}.composer-foot{display:flex;justify-content:space-between;align-items:center;margin-top:7px}.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:16px}.tabs button{border:0;background:transparent;padding:10px 14px;border-bottom:2px solid transparent;font-weight:650;color:var(--muted)}.tabs button.active{border-bottom-color:var(--primary);color:var(--primary)}.diag-panel{display:none}.diag-panel.active{display:block}.log-toolbar{display:grid;grid-template-columns:minmax(180px,1fr) 130px 100px auto auto auto;gap:8px;margin-bottom:10px}.log-view{height:390px;background:var(--sidebar);color:#e8f1ed;border-radius:8px;padding:15px;overflow:auto;white-space:pre-wrap;user-select:text;font:12px/1.6 "JetBrains Mono",Consolas,monospace}.progress{height:8px;background:#dce6e1;border-radius:99px;overflow:hidden;margin-top:10px}.progress>div{height:100%;width:0;background:var(--accent);transition:width .2s}.toast-stack{position:fixed;right:20px;bottom:20px;z-index:60;display:flex;flex-direction:column;gap:8px}.toast{width:320px;background:#fff;border:1px solid var(--border);border-left:4px solid var(--success);border-radius:8px;padding:12px;box-shadow:0 8px 24px rgba(0,0,0,.16)}.toast.error{border-left-color:var(--danger)}dialog{border:0;border-radius:12px;padding:0;width:min(440px,90vw);box-shadow:0 20px 60px rgba(0,0,0,.25)}dialog::backdrop{background:rgba(19,36,30,.5)}.dialog-body{padding:22px}.dialog-body h2{margin:0 0 8px}.dialog-body p{color:var(--muted)}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}@media(max-width:1080px){.grid-4{grid-template-columns:repeat(2,1fr)}.log-toolbar{grid-template-columns:1fr 120px 90px auto}.log-toolbar .optional{display:none}}@media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1a5a4d;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #333;
-        }
-
-        .container {
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            text-align: center;
-            min-width: 400px;
-            max-width: 500px;
-        }
-
-        .logo {
-            max-width: 200px;
-            height: auto;
-            margin-bottom: 20px;
-        }
-
-        h1 {
-            font-size: 28px;
-            color: #667eea;
-            margin-bottom: 30px;
-        }
-
-        .status {
-            display: inline-block;
-            padding: 12px 24px;
-            border-radius: 25px;
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 30px;
-            transition: all 0.3s ease;
-        }
-
-        .status.running {
-            background-color: #d4edda;
-            color: #155724;
-        }
-
-        .status.stopped {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-
-        .status.loading {
-            background-color: #fff3cd;
-            color: #856404;
-        }
-
-        .indicator {
-            display: inline-block;
-            padding: 8px 18px;
-            border-radius: 20px;
-            font-size: 14px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            transition: all 0.3s ease;
-        }
-
-        .indicator.online {
-            background-color: #d4edda;
-            color: #155724;
-        }
-
-        .indicator.offline {
-            background-color: #f8d7da;
-            color: #721c24;
-        }
-
-        .indicator.unknown {
-            background-color: #e2e3e5;
-            color: #6c757d;
-        }
-
-        .device-info {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 30px;
-            font-size: 14px;
-            color: #666;
-        }
-
-        .device-info strong {
-            color: #333;
-        }
-
-        .controls {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .autostart-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 30px;
-            font-size: 13px;
-            color: #666;
-        }
-
-        .autostart-row label {
-            cursor: pointer;
-        }
-
-        .autostart-row input:disabled + label {
-            opacity: 0.6;
-            cursor: default;
-        }
-
-        .btn {
-            flex: 1;
-            padding: 14px 20px;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .btn.primary {
-            background-color: #1a5a4d;
-            color: white;
-        }
-
-        .btn.primary:hover:not(:disabled) {
-            background-color: #218838;
-        }
-
-        .btn.danger {
-            background-color: #dc3545;
-            color: white;
-        }
-
-        .btn.danger:hover:not(:disabled) {
-            background-color: #c82333;
-        }
-
-        .links {
-            display: flex;
-            gap: 20px;
-            justify-content: center;
-            padding-top: 20px;
-            border-top: 1px solid #e9ecef;
-        }
-
-        .update-panel {
-            margin-bottom: 20px;
-            padding: 14px;
-            border: 1px solid #e9ecef;
-            border-radius: 10px;
-            text-align: left;
-            background: #f8f9fa;
-        }
-
-        .update-title {
-            font-size: 14px;
-            font-weight: 700;
-            color: #333;
-            margin-bottom: 8px;
-        }
-
-        .update-text {
-            font-size: 13px;
-            color: #555;
-            margin-bottom: 10px;
-            line-height: 1.4;
-        }
-
-        .update-actions {
-            display: flex;
-            gap: 8px;
-        }
-
-        .btn.secondary {
-            background-color: #6c757d;
-            color: white;
-            flex: 0 0 auto;
-            padding: 10px 14px;
-            font-size: 13px;
-        }
-
-        .btn.success {
-            background-color: #1a5a4d;
-            color: white;
-            flex: 0 0 auto;
-            padding: 10px 14px;
-            font-size: 13px;
-        }
-
-        .download-progress {
-            margin-top: 8px;
-            font-size: 12px;
-            color: #1a5a4d;
-            display: none;
-        }
-
-        .links a {
-            color: #667eea;
-            text-decoration: none;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            transition: color 0.2s;
-        }
-
-        .links a:hover {
-            color: #764ba2;
-        }
-
-        .loading-spinner {
-            display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid currentColor;
-            border-radius: 50%;
-            border-top-color: transparent;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .version {
-            margin-top: 20px;
-            font-size: 12px;
-            color: #999;
-        }
-
-        .panel-help, .panel-message {
-            font-size: 12px;
-            line-height: 1.5;
-            color: #68736f;
-            margin-bottom: 12px;
-        }
-
-        .activation-row {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 12px;
-        }
-
-        .activation-row input {
-            min-width: 0;
-            flex: 1;
-            padding: 9px 10px;
-            border: 1px solid #cbd6d2;
-            border-radius: 7px;
-            font: inherit;
-        }
-
-        .activation-row input:focus {
-            outline: 2px solid rgba(26, 90, 77, 0.2);
-            border-color: #1a5a4d;
-        }
-
-        .chat-panel {
-            margin: 20px 0;
-            padding: 20px;
-            border: 1px solid #dfe5e3;
-            border-radius: 12px;
-            text-align: left;
-            background: #fff;
-        }
-
-        .chat-output {
-            height: 180px;
-            overflow-y: auto;
-            padding: 10px;
-            border-radius: 8px;
-            background: #f5f8f7;
-            white-space: pre-wrap;
-            font-size: 13px;
-            line-height: 1.5;
-        }
-        .chat-prompt {
-            margin: 8px 0;
-            padding: 10px;
-            border: 1px solid #f0b429;
-            border-radius: 6px;
-            background: #fff8e1;
-        }
-        .chat-prompt button { margin: 6px 6px 0 0; }
-        .chat-prompt input { width: 100%; margin-top: 6px; padding: 6px 8px; border: 1px solid #cbd6d2; border-radius: 6px; font: inherit; }
-        .chat-prompt details { margin-top: 6px; font-size: 12px; color: #59635f; }
-        .chat-prompt pre { max-height: 160px; overflow: auto; white-space: pre-wrap; }
-        .chat-tool { color: #7a8581; font-size: 12px; }
-        .chat-panel h2 { font-size: 18px; color: #1a5a4d; margin-bottom: 6px; }
-
-        .chat-input {
-            width: 100%;
-            min-height: 64px;
-            margin-top: 10px;
-            padding: 10px;
-            border: 1px solid #cbd6d2;
-            border-radius: 8px;
-            resize: vertical;
-            font: inherit;
-        }
-
-        .chat-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 10px;
-        }
-    </style>
+/* Keep every desktop page independently scrollable. Grid children otherwise retain
+   their content height, causing the lower parts of dense screens to be clipped. */
+.workspace,.page-wrap{min-height:0}.page-wrap{height:100%}.page{min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain}.sidebar{overflow-y:auto;overflow-x:hidden}.message .bubble.thinking{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-style:italic;white-space:pre-wrap}.message .bubble.thinking:before{content:"";width:8px;height:8px;border:2px solid var(--primary);border-right-color:transparent;border-radius:50%;animation:spin .8s linear infinite;flex:0 0 auto;align-self:flex-start;margin-top:5px}.request-card .choice-list{display:grid;gap:7px;margin:12px 0}.request-card .choice-option{display:flex;align-items:flex-start;gap:9px;padding:9px 10px;border:1px solid var(--border);border-radius:7px;background:var(--surface);cursor:pointer}.request-card .choice-option:hover{border-color:var(--primary);background:var(--primary-soft)}.request-card .choice-option input{margin-top:3px;accent-color:var(--primary)}.request-card .choice-copy{display:grid;gap:2px}.request-card .choice-copy strong{font-size:13px}.request-card .choice-copy span{font-size:12px;color:var(--muted)}.request-card .choice-other{margin-top:4px}.approval-card{background:#fff8df;border-color:#e3bb4e}.approval-card p{margin:7px 0}.approval-card .request-detail-label{display:block;margin-top:12px;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}.approval-card .request-command{margin:5px 0 10px;padding:10px;max-height:180px;overflow:auto;border-radius:7px;background:#1d2a26;color:#f1f7f3;font:12px/1.45 "JetBrains Mono",Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.approval-card .request-risk{font-size:12px;color:#765300}.message .bubble.markdown{white-space:normal}.message .bubble.markdown>*:first-child{margin-top:0}.message .bubble.markdown>*:last-child{margin-bottom:0}.message .bubble.markdown p{margin:0 0 10px}.message .bubble.markdown h1,.message .bubble.markdown h2,.message .bubble.markdown h3,.message .bubble.markdown h4{margin:14px 0 8px;line-height:1.25}.message .bubble.markdown h1{font-size:1.25em}.message .bubble.markdown h2{font-size:1.15em}.message .bubble.markdown h3,.message .bubble.markdown h4{font-size:1.05em}.message .bubble.markdown ul,.message .bubble.markdown ol{margin:0 0 10px;padding-left:22px}.message .bubble.markdown li+li{margin-top:4px}.message .bubble.markdown blockquote{margin:0 0 10px;padding:4px 0 4px 10px;border-left:3px solid var(--border-strong);color:var(--muted)}.message .bubble.markdown pre{margin:0 0 10px;padding:10px;overflow:auto;border-radius:7px;background:#16201d;color:#e8f1ed;font:12px/1.45 "JetBrains Mono",Consolas,monospace}.message .bubble.markdown code{padding:1px 4px;border-radius:4px;background:var(--primary-soft);font:12px/1.35 "JetBrains Mono",Consolas,monospace}.message .bubble.markdown pre code{padding:0;background:transparent;font:inherit}.message .bubble.markdown a{color:var(--primary);text-decoration:underline;word-break:break-word}.message .bubble.markdown .markdown-table-scroll{max-width:100%;overflow-x:auto;margin:0 0 10px;border:1px solid var(--border);border-radius:7px}.message .bubble.markdown table{width:max-content;min-width:100%;border-collapse:collapse;font-size:13px;line-height:1.4}.message .bubble.markdown th,.message .bubble.markdown td{padding:8px 10px;text-align:left;vertical-align:top;border-right:1px solid var(--border);border-bottom:1px solid var(--border);white-space:normal}.message .bubble.markdown th:last-child,.message .bubble.markdown td:last-child{border-right:0}.message .bubble.markdown tr:last-child td{border-bottom:0}.message .bubble.markdown th{background:var(--subtle);font-weight:700}.message .bubble.markdown tbody tr:nth-child(even){background:#fafcfb}@keyframes spin{to{transform:rotate(360deg)}}
+</style>
 </head>
 <body>
-    <div class="container">
-        <img src="../assets/novaris_logo.png" alt="Novaris Logo" class="logo">
-        <h1>Agent</h1>
-        
-        <div id="status" class="status loading">
-            ● Loading...
-        </div>
-
-        <div id="network-status" class="indicator unknown">
-            ● Network: Checking...
-        </div>
-        
-        <div id="device-info" class="device-info">
-            <div id="hostname">Loading device info...</div>
-        </div>
-        
-        <div class="controls">
-            <button id="start-btn" class="btn primary" disabled>
-                <span id="start-spinner" class="loading-spinner" style="display: none;"></span>
-                Start Agent
-            </button>
-            <button id="stop-btn" class="btn danger" disabled>
-                <span id="stop-spinner" class="loading-spinner" style="display: none;"></span>
-                Stop Agent
-            </button>
-        </div>
-
-        <div class="autostart-row">
-            <input id="autostart-enabled" type="checkbox">
-            <label for="autostart-enabled">Start automatically in the background at login</label>
-        </div>
-
-        <section class="chat-panel" aria-labelledby="chat-title">
-            <h2 id="chat-title">Novaris Assistant</h2>
-            <p id="assistant-status" class="panel-help" role="status">Checking assistant status...</p>
-            <div id="activation-row" class="activation-row" hidden>
-                <input id="install-code" type="password" autocomplete="off" placeholder="Install code from your administrator">
-                <button id="activate-btn" class="btn primary">Activate</button>
-            </div>
-            <div id="chat-output" class="chat-output" role="log" aria-live="polite">Not connected.</div>
-            <textarea id="chat-input" class="chat-input" maxlength="20000" placeholder="Ask the assistant something..."></textarea>
-            <div class="chat-actions">
-                <button id="chat-connect" class="btn primary" disabled>Connect</button>
-                <button id="chat-send" class="btn success" disabled>Send</button>
-                <button id="chat-disconnect" class="btn secondary" disabled>Disconnect</button>
-            </div>
-        </section>
-
-        <div class="update-panel">
-            <div class="update-title">Application Update</div>
-            <div id="update-text" class="update-text">Checking for updates...</div>
-            <div class="update-actions">
-                <button id="check-update-btn" class="btn secondary">Check Update</button>
-                <button id="install-update-btn" class="btn success" disabled>Download & Install</button>
-            </div>
-            <div id="download-progress" class="download-progress">Downloading update...</div>
-        </div>
-        
-        <div class="links">
-            <a href="#" id="open-config">Edit Config</a>
-            <a href="#" id="open-logs">View Logs</a>
-        </div>
-
-        <div id="version-text" class="version">Novaris Agent v-</div>
-    </div>
-
-    <script>
-        // Check if electronAPI is available
-        if (!window.electronAPI) {
-            document.body.innerHTML = '<div class="container"><h1>Error</h1><p>Electron API not available</p></div>';
-            throw new Error('electronAPI not available');
-        }
-
-        const api = window.electronAPI;
-        
-        // DOM elements
-        const statusEl = document.getElementById('status');
-        const networkStatusEl = document.getElementById('network-status');
-        const hostnameEl = document.getElementById('hostname');
-        const startBtn = document.getElementById('start-btn');
-        const stopBtn = document.getElementById('stop-btn');
-        const startSpinner = document.getElementById('start-spinner');
-        const stopSpinner = document.getElementById('stop-spinner');
-        const autoStartCheckbox = document.getElementById('autostart-enabled');
-        const openConfigLink = document.getElementById('open-config');
-        const openLogsLink = document.getElementById('open-logs');
-        const checkUpdateBtn = document.getElementById('check-update-btn');
-        const installUpdateBtn = document.getElementById('install-update-btn');
-        const updateTextEl = document.getElementById('update-text');
-        const downloadProgressEl = document.getElementById('download-progress');
-        const versionTextEl = document.getElementById('version-text');
-        const assistantStatusEl = document.getElementById('assistant-status');
-        const activationRowEl = document.getElementById('activation-row');
-        const installCodeEl = document.getElementById('install-code');
-        const activateBtn = document.getElementById('activate-btn');
-        const chatOutputEl = document.getElementById('chat-output');
-        const chatInputEl = document.getElementById('chat-input');
-        const chatConnectBtn = document.getElementById('chat-connect');
-        const chatSendBtn = document.getElementById('chat-send');
-        const chatDisconnectBtn = document.getElementById('chat-disconnect');
-        let latestUpdateInfo = null;
-        let activeAssistantLine = null;
-
-        // Initialize
-        async function init() {
-            console.log('Initializing Novaris Agent GUI...');
-            
-            // Get initial status
-            await updateStatus();
-            
-            // Setup event listeners
-            startBtn.addEventListener('click', handleStart);
-            stopBtn.addEventListener('click', handleStop);
-            autoStartCheckbox.addEventListener('change', handleAutoStartChange);
-            await refreshAutoStart();
-            openConfigLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                api.openConfig();
-            });
-            openLogsLink.addEventListener('click', (e) => {
-                e.preventDefault();
-                api.openLogs();
-            });
-            checkUpdateBtn.addEventListener('click', handleCheckUpdate);
-            installUpdateBtn.addEventListener('click', handleInstallUpdate);
-            activateBtn.addEventListener('click', handleActivate);
-            chatConnectBtn.addEventListener('click', handleChatConnect);
-            chatSendBtn.addEventListener('click', handleChatSend);
-            chatDisconnectBtn.addEventListener('click', handleChatDisconnect);
-            api.onAgentChatEvent((_event, data) => handleChatEvent(data));
-            await refreshAssistantStatus();
-
-            // Listen for status changes
-            api.onAgentStatusChanged((event, data) => {
-                console.log('Status changed:', data);
-                updateStatusDisplay(data.running, data.online, data.managedByService);
-                // A first successful start turns background start on by itself
-                refreshAutoStart();
-            });
-
-            // Periodic refresh to keep network status updated
-            setInterval(() => {
-                updateStatus();
-            }, 10000);
-
-            api.onUpdateDownloadProgress((event, data) => {
-                if (typeof data?.percent === 'number') {
-                    downloadProgressEl.style.display = 'block';
-                    downloadProgressEl.textContent = `Downloading update... ${data.percent}%`;
-                }
-            });
-
-            try {
-                const versionInfo = await api.getAppVersion();
-                versionTextEl.textContent = `Novaris Agent v${versionInfo.version}`;
-            } catch (error) {
-                console.error('Failed to get app version:', error);
-            }
-
-            await handleCheckUpdate();
-
-            // Get device info
-            try {
-                const sysInfo = await api.getSystemInfo();
-                if (sysInfo && sysInfo.deviceInfo) {
-                    hostnameEl.innerHTML = `
-                        <strong>Device:</strong> ${sysInfo.deviceInfo.hostname}<br>
-                        <strong>Platform:</strong> ${sysInfo.deviceInfo.platform}
-                    `;
-                }
-            } catch (error) {
-                console.error('Failed to get device info:', error);
-            }
-
-            console.log('GUI initialized successfully');
-        }
-
-        // Update status
-        async function updateStatus() {
-            try {
-                const status = await api.getAgentStatus();
-                updateStatusDisplay(status.running, status.online, status.managedByService);
-            } catch (error) {
-                console.error('Failed to get status:', error);
-                statusEl.textContent = '● Error';
-                statusEl.className = 'status stopped';
-                networkStatusEl.textContent = '● Network: Unknown';
-                networkStatusEl.className = 'indicator unknown';
-            }
-        }
-
-        // Update status display
-        function updateStatusDisplay(running, online, managedByService) {
-            // The boot-time service reports for this device, so the desktop
-            // agent stays idle rather than doubling every metric
-            if (!running && managedByService) {
-                statusEl.textContent = '● Running as a service';
-                statusEl.className = 'status running';
-                startBtn.disabled = true;
-                stopBtn.disabled = true;
-                networkStatusEl.textContent = '● Reported by the background service';
-                networkStatusEl.className = 'indicator unknown';
-                return;
-            }
-
-            if (running) {
-                statusEl.textContent = '● Running';
-                statusEl.className = 'status running';
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-
-                if (online === true) {
-                    networkStatusEl.textContent = '● Network: Online';
-                    networkStatusEl.className = 'indicator online';
-                } else if (online === false) {
-                    networkStatusEl.textContent = '● Network: Offline';
-                    networkStatusEl.className = 'indicator offline';
-                } else {
-                    networkStatusEl.textContent = '● Network: Checking...';
-                    networkStatusEl.className = 'indicator unknown';
-                }
-            } else {
-                statusEl.textContent = '● Stopped';
-                statusEl.className = 'status stopped';
-                startBtn.disabled = false;
-                stopBtn.disabled = true;
-                networkStatusEl.textContent = '● Network: Not running';
-                networkStatusEl.className = 'indicator unknown';
-            }
-        }
-
-        // Handle start
-        async function handleStart() {
-            console.log('Starting agent...');
-            startBtn.disabled = true;
-            startSpinner.style.display = 'inline-block';
-            
-            try {
-                await api.startAgent();
-                console.log('Agent started');
-            } catch (error) {
-                console.error('Failed to start agent:', error);
-                alert('Failed to start agent: ' + error.message);
-                startBtn.disabled = false;
-            } finally {
-                startSpinner.style.display = 'none';
-            }
-        }
-
-        // Handle stop
-        async function handleStop() {
-            console.log('Stopping agent...');
-            stopBtn.disabled = true;
-            stopSpinner.style.display = 'inline-block';
-            
-            try {
-                await api.stopAgent();
-                console.log('Agent stopped');
-            } catch (error) {
-                console.error('Failed to stop agent:', error);
-                alert('Failed to stop agent: ' + error.message);
-                stopBtn.disabled = false;
-            } finally {
-                stopSpinner.style.display = 'none';
-            }
-        }
-
-        // Show what the OS is actually set to do at login
-        async function refreshAutoStart() {
-            try {
-                const result = await api.getAutoStart();
-                autoStartCheckbox.checked = result.enabled === true;
-            } catch (error) {
-                console.error('Failed to read background start setting:', error);
-                autoStartCheckbox.disabled = true;
-            }
-        }
-
-        // Handle the background start toggle
-        async function handleAutoStartChange() {
-            const requested = autoStartCheckbox.checked;
-            autoStartCheckbox.disabled = true;
-
-            try {
-                const result = await api.setAutoStart(requested);
-
-                // Reflect the state the OS ended up in, not the click
-                autoStartCheckbox.checked = result.enabled === true;
-
-                if (!result.success) {
-                    alert('Failed to change background start: ' + (result.error || 'unknown error'));
-                }
-            } catch (error) {
-                console.error('Failed to change background start setting:', error);
-                alert('Failed to change background start: ' + error.message);
-                await refreshAutoStart();
-            } finally {
-                autoStartCheckbox.disabled = false;
-            }
-        }
-
-        async function handleCheckUpdate() {
-            checkUpdateBtn.disabled = true;
-            updateTextEl.textContent = 'Checking for update...';
-
-            try {
-                const result = await api.checkForUpdate();
-                if (result.updateAvailable) {
-                    latestUpdateInfo = result.updateInfo;
-                    updateTextEl.textContent = `Update available: v${result.latestVersion} (current v${result.currentVersion})`;
-                    installUpdateBtn.disabled = false;
-                } else {
-                    latestUpdateInfo = null;
-                    installUpdateBtn.disabled = true;
-                    updateTextEl.textContent = result.message || `You are using latest version (v${result.currentVersion})`;
-                }
-            } catch (error) {
-                latestUpdateInfo = null;
-                installUpdateBtn.disabled = true;
-                updateTextEl.textContent = 'Failed to check updates. Please try again.';
-                console.error('Update check failed:', error);
-            } finally {
-                checkUpdateBtn.disabled = false;
-            }
-        }
-
-        async function handleInstallUpdate() {
-            if (!latestUpdateInfo) {
-                return;
-            }
-
-            installUpdateBtn.disabled = true;
-            checkUpdateBtn.disabled = true;
-            downloadProgressEl.style.display = 'block';
-            downloadProgressEl.textContent = 'Downloading update...';
-
-            try {
-                const result = await api.downloadAndInstallUpdate();
-                if (result.success) {
-                    updateTextEl.textContent = `Installer opened for v${result.version}. Complete installation to finish update.`;
-                } else {
-                    updateTextEl.textContent = result.message || 'Failed to install update.';
-                }
-            } catch (error) {
-                updateTextEl.textContent = 'Failed to install update.';
-                console.error('Install update failed:', error);
-            } finally {
-                checkUpdateBtn.disabled = false;
-                installUpdateBtn.disabled = false;
-                setTimeout(() => {
-                    downloadProgressEl.style.display = 'none';
-                }, 2500);
-            }
-        }
-
-        async function refreshAssistantStatus() {
-            try {
-                const status = await api.agentRuntimeStatus();
-                activationRowEl.hidden = status.activated;
-                chatConnectBtn.disabled = !status.activated || chatDisconnectBtn.disabled === false;
-                if (!status.activated) {
-                    assistantStatusEl.textContent = 'The assistant is not activated on this device. Enter the install code from your administrator.';
-                    return;
-                }
-                const parts = [`Model: ${status.model}`, `Workspace: ${status.workspacePath}`];
-                if (!status.running) parts.unshift('Starting...');
-                if (!status.tokenPersisted) parts.push('This system cannot store the activation securely, so you will need to activate again after restarting the app.');
-                assistantStatusEl.textContent = parts.join(' · ');
-            } catch (error) {
-                assistantStatusEl.textContent = `Assistant status unavailable: ${error.message}`;
-            }
-        }
-
-        async function handleActivate() {
-            const code = installCodeEl.value.trim();
-            if (!code) {
-                assistantStatusEl.textContent = 'Enter the install code from your administrator.';
-                return;
-            }
-            activateBtn.disabled = true;
-            assistantStatusEl.textContent = 'Activating the assistant...';
-            try {
-                const result = await api.agentRuntimeActivate(code);
-                if (!result.success) throw new Error(result.message);
-                installCodeEl.value = '';
-                await refreshAssistantStatus();
-            } catch (error) {
-                assistantStatusEl.textContent = `Activation failed: ${error.message}`;
-            } finally {
-                activateBtn.disabled = false;
-            }
-        }
-
-        function appendChat(text, className) {
-            const line = document.createElement('div');
-            line.textContent = text;
-            if (className) line.className = className;
-            if (chatOutputEl.dataset.started !== 'true') {
-                chatOutputEl.textContent = '';
-                chatOutputEl.dataset.started = 'true';
-            }
-            chatOutputEl.appendChild(line);
-            chatOutputEl.scrollTop = chatOutputEl.scrollHeight;
-        }
-
-        function appendAssistantDelta(text) {
-            if (!activeAssistantLine) {
-                appendChat('Assistant: ');
-                activeAssistantLine = chatOutputEl.lastChild;
-            }
-            activeAssistantLine.textContent += text;
-            chatOutputEl.scrollTop = chatOutputEl.scrollHeight;
-        }
-
-        function addPromptBox(message) {
-            const prompt = document.createElement('div');
-            prompt.className = 'chat-prompt';
-            const text = document.createElement('div');
-            text.textContent = message;
-            prompt.appendChild(text);
-            chatOutputEl.appendChild(prompt);
-            chatOutputEl.scrollTop = chatOutputEl.scrollHeight;
-            return prompt;
-        }
-
-        const APPROVAL_LABELS = {
-            once: 'Allow once',
-            session: 'Allow for this chat',
-            always: 'Always allow',
-            deny: 'Deny',
-        };
-
-        function addApprovalPrompt(data) {
-            const payload = data?.payload || {};
-            const prompt = addPromptBox(payload.message || 'The assistant is asking for approval.');
-            if (Array.isArray(payload.actions) && payload.actions.length) {
-                const details = document.createElement('details');
-                const summary = document.createElement('summary');
-                summary.textContent = 'Show details';
-                const pre = document.createElement('pre');
-                pre.textContent = JSON.stringify(payload.actions, null, 2);
-                details.append(summary, pre);
-                prompt.appendChild(details);
-            }
-            const buttons = [];
-            for (const choice of payload.choices || Object.keys(APPROVAL_LABELS)) {
-                const button = document.createElement('button');
-                button.className = `btn ${choice === 'deny' ? 'danger' : 'secondary'}`;
-                button.textContent = APPROVAL_LABELS[choice] || choice;
-                button.addEventListener('click', async () => {
-                    buttons.forEach((b) => { b.disabled = true; });
-                    try {
-                        await api.agentChatRespond('approval', choice, undefined, data.session_id);
-                        prompt.remove();
-                        appendChat(`You chose: ${APPROVAL_LABELS[choice] || choice}`, 'chat-tool');
-                    } catch (error) {
-                        buttons.forEach((b) => { b.disabled = false; });
-                        appendChat(`Response failed: ${error.message}`);
-                    }
-                });
-                buttons.push(button);
-                prompt.appendChild(button);
-            }
-        }
-
-        function addClarifyPrompt(data) {
-            const payload = data?.payload || {};
-            const prompt = addPromptBox(payload.question || 'The assistant has a question.');
-            const input = document.createElement('input');
-            input.type = 'text';
-            input.placeholder = 'Your answer';
-            const submit = document.createElement('button');
-            submit.className = 'btn secondary';
-            submit.textContent = 'Answer';
-            const send = async () => {
-                submit.disabled = true;
-                try {
-                    await api.agentChatRespond('clarify', input.value, payload.clarify_id, data.session_id);
-                    prompt.remove();
-                    appendChat(`You: ${input.value}`);
-                } catch (error) {
-                    submit.disabled = false;
-                    appendChat(`Response failed: ${error.message}`);
-                }
-            };
-            submit.addEventListener('click', send);
-            input.addEventListener('keydown', (event) => { if (event.key === 'Enter') send(); });
-            prompt.append(input, submit);
-            input.focus();
-        }
-
-        function setChatConnected(connected) {
-            chatSendBtn.disabled = !connected;
-            chatDisconnectBtn.disabled = !connected;
-            chatConnectBtn.disabled = connected || !activationRowEl.hidden;
-        }
-
-        async function handleChatConnect() {
-            chatConnectBtn.disabled = true;
-            appendChat('Connecting to the assistant...');
-            try {
-                const result = await api.agentChatConnect();
-                if (!result.success) throw new Error(result.message);
-                await api.agentChatCreateSession();
-                setChatConnected(true);
-                appendChat('Connected.');
-            } catch (error) {
-                chatConnectBtn.disabled = false;
-                appendChat(`Connection failed: ${error.message}`);
-            }
-            await refreshAssistantStatus();
-        }
-
-        async function handleChatSend() {
-            const text = chatInputEl.value.trim();
-            if (!text) return;
-            chatSendBtn.disabled = true;
-            appendChat(`You: ${text}`);
-            chatInputEl.value = '';
-            try {
-                const result = await api.agentChatSend(text);
-                if (!result.success) throw new Error(result.message);
-            } catch (error) {
-                appendChat(`Send failed: ${error.message}`);
-            } finally {
-                chatSendBtn.disabled = chatDisconnectBtn.disabled;
-            }
-        }
-
-        function handleChatDisconnect() {
-            api.agentChatDisconnect();
-            setChatConnected(false);
-            appendChat('Disconnected.');
-        }
-
-        function handleChatEvent(data) {
-            const payload = data?.payload || {};
-            switch (data?.type) {
-                case 'message.start':
-                case 'message.complete':
-                    activeAssistantLine = null;
-                    break;
-                case 'message.delta':
-                    if (payload.text) appendAssistantDelta(payload.text);
-                    break;
-                case 'reasoning.delta':
-                    if (payload.text) appendChat(`Thinking: ${payload.text}`, 'chat-tool');
-                    break;
-                case 'tool.result':
-                    appendChat(`· ${payload.name} ${payload.status === 'error' ? 'failed' : 'done'}`, 'chat-tool');
-                    break;
-                case 'approval.request':
-                    addApprovalPrompt(data);
-                    break;
-                case 'clarify.request':
-                    addClarifyPrompt(data);
-                    break;
-                case 'error':
-                    appendChat(`Assistant error: ${payload.message || 'Unknown error'}`);
-                    break;
-                case 'connection.closed':
-                    if (!chatDisconnectBtn.disabled) {
-                        setChatConnected(false);
-                        appendChat('The assistant stopped. Click Connect to start it again.');
-                    }
-                    break;
-            }
-        }
-
-        // Initialize on load
-        document.addEventListener('DOMContentLoaded', init);
-    </script>
+<div class="app">
+<aside class="sidebar" aria-label="Primary navigation">
+  <div class="logo-plate"><img src="../assets/novaris_logo.png" alt="Novaris"></div>
+  <nav class="nav">
+    <button class="active" data-page="overview"><span class="nav-icon">⌂</span>Overview</button>
+    <button data-page="activities"><span class="nav-icon">≡</span>Activities</button>
+    <button data-page="chat"><span class="nav-icon">◇</span>Assistant</button>
+    <button data-page="settings"><span class="nav-icon">⚙</span>Settings</button>
+    <button data-page="diagnostics"><span class="nav-icon">⌁</span>Diagnostics</button>
+  </nav>
+  <div class="sidebar-foot"><strong>Novaris Agent</strong><span id="side-version">Version —</span><div id="side-update" class="update-side" hidden>Update available</div></div>
+</aside>
+<div class="workspace">
+<header class="topbar">
+  <div class="device-context"><strong id="top-host">Loading device…</strong><small id="top-asset">Asset tag —</small></div>
+  <div class="top-status" aria-live="polite"><span id="top-agent" class="badge neutral">Checking agent</span><span id="top-network" class="badge neutral">Checking backend</span><button id="overflow-btn" class="icon-btn" aria-label="Application actions" aria-expanded="false" aria-controls="top-action-menu">•••</button><div id="top-action-menu" class="action-menu" hidden><button data-open="config">Open config file</button><button data-open="logs">Open logs folder</button></div></div>
+</header>
+<main class="page-wrap">
+<section id="page-overview" class="page active" aria-labelledby="overview-title"><div class="page-inner">
+  <div class="page-head"><div><h1 id="overview-title">Overview</h1><p>Device health and operational status at a glance.</p></div><button id="lifecycle-btn" class="btn primary">Loading…</button></div>
+  <div id="config-banner" class="banner warning" hidden><span>!</span><div class="grow"><strong>Configuration required</strong><span>Backend API URL, API key, and asset tag are required before the agent can run.</span></div><button class="link-button" data-goto="settings">Configure now</button></div>
+  <div id="overview-update" class="banner info" hidden><span>↥</span><div class="grow"><strong id="overview-update-title">Update available</strong><span id="overview-update-copy"></span></div><button class="link-button" data-goto="diagnostics" data-tab="updates">Review update</button></div>
+  <div class="grid-4">
+    <article class="card"><div class="card-label">Agent</div><div id="ov-agent" class="status-value">Checking…</div><div id="ov-agent-detail" class="muted small">Local service state</div></article>
+    <article class="card"><div class="card-label">Backend connection</div><div id="ov-network" class="status-value">Checking…</div><div class="muted small">Novaris reporting endpoint</div></article>
+    <article class="card"><div class="card-label">AI assistant</div><div id="ov-assistant" class="status-value">Checking…</div><div id="ov-assistant-detail" class="muted small">Local Deep Agents runtime</div></article>
+    <article class="card"><div class="card-label">Background activities</div><div id="ov-activities" class="status-value">Checking…</div><button class="link-button small" data-goto="activities">View activities</button></article>
+  </div>
+  <div class="grid-2 section">
+    <article class="card"><h2>Device</h2><p class="muted">Identity assigned to this endpoint.</p><dl class="details"><dt>Hostname</dt><dd id="device-host">—</dd><dt>Platform</dt><dd id="device-platform">—</dd><dt>Asset tag</dt><dd id="device-asset">—</dd><dt>Device ID</dt><dd id="device-id">—</dd></dl></article>
+    <article class="card"><h2>Recent activity</h2><p class="muted">Latest state from the local process registry.</p><dl class="details"><dt>Failed</dt><dd id="recent-failed">—</dd><dt>Last completed</dt><dd id="recent-completed">—</dd><dt>Registry updated</dt><dd id="recent-generated">—</dd></dl></article>
+  </div>
+</div></section>
+<section id="page-activities" class="page" aria-labelledby="activities-title"><div class="page-inner">
+  <div class="page-head"><div><h1 id="activities-title">Activities</h1><p>Inspect and control background Novaris operations.</p></div><button id="process-refresh" class="btn">↻ Refresh</button></div>
+  <div id="activity-message" role="status"></div>
+  <div class="toolbar" style="margin-bottom:12px"><input id="process-search" class="search" style="max-width:280px" type="search" aria-label="Search activities" placeholder="Search processes"><button class="btn filter-btn active" data-filter="all">All</button><button class="btn filter-btn" data-filter="running">Running</button><button class="btn filter-btn" data-filter="failed">Failed</button><button class="btn filter-btn" data-filter="disabled">Disabled</button><span id="process-generated" class="muted small"></span></div>
+  <div class="table-card"><table><thead><tr><th>Process</th><th>State</th><th>Interval</th><th>Runs</th><th>Last run</th><th>Configuration</th></tr></thead><tbody id="process-body"><tr><td colspan="6">Loading activities…</td></tr></tbody></table></div>
+</div></section>
+<section id="page-chat" class="page chat-page" aria-labelledby="chat-title"><div class="page-inner" style="height:100%">
+  <div class="page-head"><div><h1 id="chat-title">Assistant</h1><p>Ask about and work with files in your AssetAssistant folder.</p></div><span id="chat-status" class="badge neutral">Disconnected</span></div>
+  <div class="chat-layout">
+    <div class="chat-connect"><div><strong>Novaris assistant</strong><div id="assistant-detail" class="muted small">Checking assistant status…</div></div><button id="chat-connect" class="btn primary">Start chat</button><button id="chat-disconnect" class="btn" disabled>Disconnect</button></div>
+    <div id="conversation" class="conversation" role="log" aria-live="polite"><div id="chat-empty" class="empty-chat"><strong>Start a conversation</strong><br>Changes to your files always ask for your approval first.</div></div>
+    <div class="composer"><label class="sr-only" for="chat-input">Message the assistant</label><textarea id="chat-input" maxlength="20000" placeholder="Ask the assistant something…" disabled></textarea><div class="composer-foot"><small class="muted">Ctrl/Cmd + Enter to send</small><button id="chat-send" class="btn primary" disabled>Send message</button></div></div>
+  </div>
+</div></section>
+<section id="page-settings" class="page" aria-labelledby="settings-title"><div class="page-inner">
+  <div class="page-head"><div><h1 id="settings-title">Settings</h1><p>Configure backend connectivity and endpoint behavior.</p></div><span id="dirty-badge" class="badge warning" hidden>Unsaved changes</span></div>
+  <div id="settings-message" role="status"></div>
+  <div class="settings-layout"><nav class="subnav" aria-label="Settings sections"><button class="active" data-settings="connection">Connection</button><button data-settings="collection">Collection</button><button data-settings="gateway">Network Gateway</button><button data-settings="response">Response actions</button><button data-settings="application">Application</button></nav>
+  <form id="settings-form" novalidate>
+    <section class="settings-section active" data-section="connection"><article class="card"><h2>Backend connection</h2><p class="muted">Credentials remain local. Stored API keys are never shown.</p><div class="form-grid section"><label class="field wide"><span>Backend API URL</span><input name="apiUrl" type="url" required placeholder="https://example.com/api/v1"></label><label class="field"><span>API key</span><input name="apiKey" type="password" autocomplete="new-password" placeholder="Leave blank to keep current key"><small id="api-key-state">Write-only secret</small></label><label class="field"><span>Asset tag</span><input name="assetTag" required maxlength="200"></label><label class="field"><span>Hostname</span><input id="settings-hostname" disabled></label><label class="field"><span>Device ID</span><input id="settings-device-id" disabled></label></div></article></section>
+    <section class="settings-section" data-section="collection"><article class="card"><h2>Collection</h2><p class="muted">Choose what this endpoint reports.</p><div class="form-grid section">
+      <label class="field"><span>Base collection interval (seconds)</span><input name="collectInterval" type="number" min="1" required></label><label class="field"><span>Reporting interval (seconds)</span><input name="reportInterval" type="number" min="1" required></label>
+      <label class="switch"><input name="collectSoftware" type="checkbox">Software inventory</label><label class="field"><span>Software interval (report cycles)</span><input name="softwareCollectionInterval" type="number" min="1"></label>
+      <label class="switch"><input name="collectConnectedDevices" type="checkbox">Connected devices</label><label class="switch"><input name="collectNetworkNeighbors" type="checkbox">Network neighbors</label>
+      <label class="switch"><input name="collectPatchStatus" type="checkbox">Patch status</label><label class="field"><span>Patch interval (seconds)</span><input name="patchStatusInterval" type="number" min="1"></label>
+      <label class="switch"><input name="collectSecurityPosture" type="checkbox">Security posture</label><label class="field"><span>Security posture interval (seconds)</span><input name="securityPostureInterval" type="number" min="1"></label>
+      <label class="switch"><input name="collectLogs" type="checkbox">Operating-system logs</label><label class="field"><span>Logs interval (seconds)</span><input name="logsInterval" type="number" min="1"></label>
+      <label class="switch"><input name="collectSecurityEvents" type="checkbox">Security events</label><label class="switch"><input name="collectProcesses" type="checkbox">Process collection</label>
+    </div><details class="advanced"><summary>Advanced collection settings</summary><div class="form-grid section"><label class="field"><span>Log batch size</span><input name="logsMaxBatchSize" type="number" min="1"></label><label class="field"><span>Log minimum severity</span><select name="logsMinSeverity"><option>info</option><option>warning</option><option>error</option><option>critical</option></select></label><label class="switch"><input name="logsIncludeRaw" type="checkbox">Include raw log data</label><label class="field"><span>Security event minimum severity</span><select name="securityEventsMinSeverity"><option>info</option><option>warning</option><option>error</option><option>critical</option></select></label><label class="field"><span>Process interval (seconds)</span><input name="processInterval" type="number" min="1"></label></div></details></article></section>
+    <section class="settings-section" data-section="gateway">
+      <article class="card"><h2>Agent mode</h2><p class="muted">Network Gateway Agent adds network-wide monitoring on top of normal endpoint monitoring. Deploy it on whichever machine acts as your network monitoring point.</p><div class="form-grid section"><label class="field"><span>Mode</span><select name="agentMode"><option value="endpoint">Endpoint Agent</option><option value="network_gateway">Network Gateway Agent</option></select></label></div></article>
+      <article class="card"><h2>Syslog collector</h2><p class="muted">Listens for UDP syslog messages and classifies them with the same Sigma detection rules used for local logs.</p><div class="form-grid section"><label class="switch"><input name="collectSyslog" type="checkbox">Collect syslog</label><label class="field"><span>UDP port</span><input name="syslogPort" type="number" min="1" max="65535"></label><label class="field"><span>Flush interval (seconds)</span><input name="syslogInterval" type="number" min="1"></label></div></article>
+      <article class="card"><h2>SNMP polling</h2><p class="muted">Polls network devices (switches, access points, printers) for liveness and identity.</p><div class="form-grid section"><label class="switch"><input name="collectSnmp" type="checkbox">Collect SNMP</label><label class="field wide"><span>Target IPs (comma-separated)</span><input name="snmpTargets" placeholder="192.168.1.1, 192.168.1.10"></label><label class="field"><span>Community string</span><input name="snmpCommunity"></label><label class="field"><span>Poll interval (seconds)</span><input name="snmpInterval" type="number" min="1"></label></div></article>
+      <article class="card"><h2>Active discovery</h2><p class="muted">Ping-sweeps the local subnet and flags devices not seen before as a possible rogue device.</p><div class="form-grid section"><label class="switch"><input name="collectActiveDiscovery" type="checkbox">Collect active discovery</label><label class="field"><span>Scan interval (seconds)</span><input name="activeDiscoveryInterval" type="number" min="1"></label></div></article>
+      <article class="card"><h2>Zeek log tailing</h2><p class="muted">Linux/macOS only. Tails notices from an already-installed, already-running Zeek - this does not install or manage Zeek itself.</p><div class="form-grid section"><label class="switch"><input name="collectZeekLogs" type="checkbox">Collect Zeek notices</label><label class="field wide"><span>Zeek log directory (optional override)</span><input name="zeekLogDir" placeholder="Auto-detected if left blank"></label><label class="field"><span>Check interval (seconds)</span><input name="zeekLogsInterval" type="number" min="1"></label></div></article>
+    </section>
+    <section class="settings-section" data-section="response"><article class="card"><h2>Response actions</h2><p class="muted">Remote actions can execute commands on this endpoint. Dry-run is the safe default.</p><div class="form-grid section"><label class="switch"><input name="pollResponseActions" type="checkbox">Poll response actions</label><label class="field"><span>Polling interval (seconds)</span><input name="responseActionsInterval" type="number" min="1"></label><label class="field"><span>Command timeout (seconds)</span><input name="responseActionTimeout" type="number" min="1"></label><label class="switch"><input name="responseActionsDryRun" type="checkbox">Dry-run mode</label><label class="switch wide"><input name="remoteActionsEnabled" type="checkbox">Enable remote actions</label></div></article></section>
+    <section class="settings-section" data-section="application"><article class="card"><h2>Application</h2><p class="muted">Startup, logging, and retry behavior.</p><div class="form-grid section"><label class="switch"><input name="autoStart" type="checkbox">Start at system login</label><label class="field"><span>Log level</span><select name="logLevel"><option>error</option><option>warn</option><option>info</option><option>debug</option></select></label><label class="field wide"><span>Log file path</span><input name="logFile" placeholder="Use default path"></label><label class="field"><span>Retry attempts</span><input name="retryAttempts" type="number" min="0"></label><label class="field"><span>Retry delay (milliseconds)</span><input name="retryDelay" type="number" min="0"></label></div></article></section>
+    <div class="settings-footer"><span id="settings-footer-text" class="muted">No unsaved changes</span><div class="actions"><button id="settings-discard" type="button" class="btn" disabled>Discard</button><button id="settings-save" type="submit" class="btn primary" disabled>Save changes</button></div></div>
+  </form></div>
+</div></section>
+<section id="page-diagnostics" class="page" aria-labelledby="diagnostics-title"><div class="page-inner">
+  <div class="page-head"><div><h1 id="diagnostics-title">Diagnostics</h1><p>Logs, updates, and application identity.</p></div></div>
+  <div class="tabs" role="tablist"><button class="active" data-diag="logs" role="tab">Logs</button><button data-diag="updates" role="tab">Updates</button><button data-diag="about" role="tab">About</button></div>
+  <section class="diag-panel active" data-panel="logs"><div class="log-toolbar"><input id="log-search" class="search" type="search" placeholder="Search logs" aria-label="Search logs"><select id="log-level" aria-label="Severity filter"><option value="all">All levels</option><option>error</option><option>warn</option><option>info</option><option>debug</option></select><select id="log-lines" aria-label="Line count"><option>100</option><option selected>200</option><option>500</option><option>1000</option></select><button id="logs-refresh" class="btn">Refresh</button><button id="logs-copy" class="btn optional">Copy</button><button class="btn optional" data-open="logs">Open folder</button></div><div id="log-message" class="muted small" role="status"></div><pre id="log-view" class="log-view">Loading logs…</pre></section>
+  <section class="diag-panel" data-panel="updates"><article class="card"><h2>Application updates</h2><dl class="details"><dt>Current version</dt><dd id="update-current">—</dd><dt>Latest version</dt><dd id="update-latest">Not checked</dd><dt>Last result</dt><dd id="update-result">Not checked</dd><dt>Release notes</dt><dd id="update-notes">—</dd></dl><div class="actions section"><button id="check-update" class="btn">Check for updates</button><button id="install-update" class="btn primary" disabled>Download and install</button></div><div id="download-wrap" hidden><div class="progress" role="progressbar" aria-label="Update download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="download-bar"></div></div><span id="download-text" class="small muted">Preparing download…</span></div><p class="muted small">When the download completes, an external installer may open.</p></article></section>
+  <section class="diag-panel" data-panel="about"><article class="card"><h2>Novaris Agent</h2><p class="muted">Local endpoint monitoring and AI assistant application.</p><dl class="details"><dt>Version</dt><dd id="about-version">—</dd><dt>Host platform</dt><dd id="about-platform">—</dd><dt>Architecture</dt><dd>Not supplied by current renderer contract</dd></dl><div class="actions section"><button class="btn" data-open="config">Open config file</button><button class="btn" data-open="logs">Open logs folder</button></div></article></section>
+</div></section>
+</main>
+</div></div>
+<div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+<dialog id="confirm-dialog"><div class="dialog-body"><h2 id="confirm-title">Confirm action</h2><p id="confirm-copy"></p><div class="dialog-actions"><button id="confirm-cancel" class="btn">Cancel</button><button id="confirm-ok" class="btn danger">Continue</button></div></div></dialog>
+<dialog id="mode-dialog"><div class="dialog-body"><h2>Choose agent mode</h2><p>Endpoint Agent monitors this device only. Network Gateway Agent adds network-wide monitoring — syslog, SNMP polling, active device discovery, and Zeek notices — on top of normal endpoint monitoring. Deploy Network Gateway Agent on whichever machine acts as your network monitoring point. You can change this later in Settings.</p><div class="actions section" style="flex-direction:column;align-items:stretch;gap:10px"><button id="mode-endpoint" class="btn primary" style="justify-content:flex-start">Endpoint Agent — monitor this device</button><button id="mode-gateway" class="btn" style="justify-content:flex-start">Network Gateway Agent — add network monitoring</button></div></div></dialog>
+<script>
+'use strict';
+if(!window.electronAPI){document.body.innerHTML='<main style="padding:32px"><h1>Novaris Agent</h1><p role="alert">Electron API is not available. Open this interface from the desktop application.</p></main>';throw new Error('electronAPI unavailable')}
+const api=window.electronAPI;
+const state={page:'overview',status:{running:false,online:null},config:{},system:{},assistant:{activated:false,running:false},processes:[],processGenerated:'',processFilter:'all',processSearch:'',logs:[],update:null,version:'—',settingsSnapshot:'',chatConnected:false,initialized:false};
+const $=id=>document.getElementById(id);const $$=selector=>Array.from(document.querySelectorAll(selector));
+const escapeHtml=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const errorText=error=>error?.message||String(error||'Unknown error');
+function toast(message,type='success'){const el=document.createElement('div');el.className='toast '+(type==='error'?'error':'');el.textContent=message;$('toast-stack').append(el);setTimeout(()=>el.remove(),4200)}
+function banner(id,message,type='danger'){const host=$(id);host.innerHTML=message?`<div class="banner ${type}" role="${type==='danger'?'alert':'status'}"><span>${type==='danger'?'!':'i'}</span><div class="grow">${escapeHtml(message)}</div></div>`:''}
+function busy(button,on,label){if(on){button.dataset.label=button.textContent;button.disabled=true;button.innerHTML='<span class="spinner"></span>'+escapeHtml(label||'Working…')}else{button.textContent=button.dataset.label||label||'Done';button.disabled=false}}
+function formatDate(value){if(!value||value==='Never')return 'Never';const d=new Date(value);return Number.isNaN(d.getTime())?String(value):d.toLocaleString()}
+function statusBadge(el,text,kind){el.textContent=text;el.className='badge '+kind}
+function navigate(page,tab){if(!document.getElementById('page-'+page))return;state.page=page;$$('.page').forEach(p=>p.classList.toggle('active',p.id==='page-'+page));$$('.nav button').forEach(b=>{const active=b.dataset.page===page;b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});if(page==='diagnostics'&&tab)selectDiagnostic(tab);if(page==='activities')refreshProcesses();if(page==='diagnostics'&&(!tab||tab==='logs'))refreshLogs();if(page==='chat')refreshAssistant();document.querySelector('#page-'+page+' h1')?.focus?.({preventScroll:true})}
+async function confirmAction(title,copy,confirmLabel='Continue'){const dialog=$('confirm-dialog');$('confirm-title').textContent=title;$('confirm-copy').textContent=copy;$('confirm-ok').textContent=confirmLabel;return new Promise(resolve=>{const done=value=>{dialog.close();$('confirm-ok').onclick=null;$('confirm-cancel').onclick=null;resolve(value)};$('confirm-ok').onclick=()=>done(true);$('confirm-cancel').onclick=()=>done(false);dialog.oncancel=e=>{e.preventDefault();done(false)};dialog.showModal();setTimeout(()=>$('confirm-cancel').focus(),0)})}
+function updateGlobalStatus(){const running=state.status.running;statusBadge($('top-agent'),running?'Agent running':'Agent stopped',running?'success':'neutral');statusBadge($('top-network'),!running?'Backend not running':state.status.online===true?'Backend online':state.status.online===false?'Backend offline':'Backend checking',!running?'neutral':state.status.online===true?'success':state.status.online===false?'danger':'warning');$('ov-agent').textContent=running?'Running':'Stopped';$('ov-network').textContent=!running?'Not running':state.status.online===true?'Online':state.status.online===false?'Offline':'Checking…';$('ov-agent-detail').textContent=running?'Agent services are active':'Local agent is not running';const btn=$('lifecycle-btn');btn.textContent=running?'Stop agent':'Start agent';btn.className='btn '+(running?'danger':'primary');btn.disabled=false}
+async function refreshStatus(){try{state.status=await api.getAgentStatus();updateGlobalStatus()}catch(error){statusBadge($('top-agent'),'Agent error','danger');banner('activity-message','Unable to read agent status: '+errorText(error))}}
+async function lifecycle(){if(state.status.running){if(!await confirmAction('Stop Novaris Agent?','Monitoring and reporting will pause until the agent is started again.','Stop agent'))return}const btn=$('lifecycle-btn');busy(btn,true,state.status.running?'Stopping…':'Starting…');try{state.status.running?await api.stopAgent():await api.startAgent();toast(state.status.running?'Agent stopped':'Agent started');await refreshStatus()}catch(error){toast('Agent action failed: '+errorText(error),'error')}finally{busy(btn,false);updateGlobalStatus()}}
+async function loadIdentity(){try{const [system,config]=await Promise.all([api.getSystemInfo(),api.getConfig()]);state.system=system||{};state.config=config||{};const d=state.system.deviceInfo||{};$('top-host').textContent=d.hostname||config.hostname||'Unknown device';$('top-asset').textContent='Asset tag '+(config.assetTag||'—');$('device-host').textContent=d.hostname||config.hostname||'Not available';$('device-platform').textContent=d.osVersion||d.osType||'Not available';$('device-asset').textContent=config.assetTag||'Not configured';$('device-id').textContent=config.deviceId??'Not assigned';$('settings-hostname').value=d.hostname||config.hostname||'';$('settings-device-id').value=config.deviceId??'';$('about-platform').textContent=d.osVersion||d.osType||'Not supplied';const missing=!config.apiUrl||!config.apiKey||!config.assetTag;$('config-banner').hidden=!missing;populateSettings(config);if(!config.agentMode&&!state.initialized)openModePicker();if(missing&&!state.initialized){selectSettings('connection');navigate('settings');banner('settings-message','Complete the required connection fields to finish setup.','warning')}}catch(error){toast('Unable to load device information: '+errorText(error),'error')}}
+function openModePicker(){const dialog=$('mode-dialog');dialog.oncancel=e=>e.preventDefault();dialog.showModal()}
+async function pickAgentMode(mode){const isGateway=mode==='network_gateway';const defaults=isGateway?{agentMode:mode,collectSyslog:true,collectActiveDiscovery:true,collectYaraScan:false,collectProcesses:false}:{agentMode:mode};const buttons=[$('mode-endpoint'),$('mode-gateway')];buttons.forEach(b=>b.disabled=true);try{const result=await api.saveConfig(defaults);if(!result?.success)throw new Error(result?.error||'Save failed');state.config={...state.config,...defaults};populateSettings(state.config);$('mode-dialog').close();toast('Agent mode set to '+(isGateway?'Network Gateway Agent':'Endpoint Agent')+(isGateway?'; agent restart requested':''))}catch(error){toast('Unable to save agent mode: '+errorText(error),'error')}finally{buttons.forEach(b=>b.disabled=false)}}
+async function loadVersion(){try{const result=await api.getAppVersion();state.version=result.version;$('side-version').textContent='Version '+result.version;$('update-current').textContent=result.version;$('about-version').textContent=result.version}catch(error){toast('Unable to read app version','error')}}
+const PROCESS_KEYS={'patch.reporting':'collectPatchStatus','security-posture.reporting':'collectSecurityPosture','logs.reporting':'collectLogs','processes.reporting':'collectProcesses','response-actions.polling':'pollResponseActions'};
+const CATEGORY={lifecycle:'Lifecycle',collection:'Collection',reporting:'Reporting',integration:'Integration'};
+async function refreshProcesses(){const btn=$('process-refresh');busy(btn,true,'Refreshing…');try{const [result,config]=await Promise.all([api.getProcessRegistry(),api.getConfig()]);state.processes=result.processes||[];state.processGenerated=result.generatedAt||'';state.config={...state.config,...config};$('process-generated').textContent=result.generatedAt?'Updated '+formatDate(result.generatedAt):'';renderProcesses();renderProcessSummary()}catch(error){banner('activity-message','Unable to load activities: '+errorText(error));$('process-body').innerHTML='<tr><td colspan="6">Activities are unavailable.</td></tr>'}finally{busy(btn,false,'↻ Refresh')}}
+function renderProcessSummary(){const failed=state.processes.filter(p=>p.status==='failed').length;const enabled=state.processes.filter(p=>p.enabled!==false).length;$('ov-activities').textContent=failed?failed+' failed':enabled+' enabled';$('recent-failed').textContent=String(failed);const completed=state.processes.filter(p=>p.lastCompletedAt).sort((a,b)=>new Date(b.lastCompletedAt)-new Date(a.lastCompletedAt))[0];$('recent-completed').textContent=completed?`${completed.name} · ${formatDate(completed.lastCompletedAt)}`:'No completed activity reported';$('recent-generated').textContent=state.processGenerated?formatDate(state.processGenerated):'Not available'}
+function renderProcesses(){const search=state.processSearch.toLowerCase();const visible=state.processes.filter(p=>(state.processFilter==='all'||p.status===state.processFilter)&&(!search||`${p.name} ${p.description} ${p.id}`.toLowerCase().includes(search)));if(!visible.length){$('process-body').innerHTML='<tr><td colspan="6">No activities match the current filters.</td></tr>';return}let html='';for(const category of ['lifecycle','collection','reporting','integration']){const rows=visible.filter(p=>p.category===category);if(!rows.length)continue;html+=`<tr class="group-row"><td colspan="6">${CATEGORY[category]}</td></tr>`;for(const p of rows){const key=PROCESS_KEYS[p.id],enabled=key?Boolean(state.config[key]):p.enabled;const kind=p.status==='failed'?'danger':p.status==='running'?'success':p.status==='disabled'?'neutral':'info';html+=`<tr><td class="process-name"><strong>${escapeHtml(p.name)}</strong><small>${escapeHtml(p.description||'')}</small></td><td><span class="badge ${kind}">${escapeHtml(p.status||'idle')}</span>${p.lastError?`<span class="error-line">${escapeHtml(p.lastError)}</span><button class="link-button small" data-view-logs>View logs</button>`:''}</td><td>${p.intervalSeconds?escapeHtml(p.intervalSeconds)+'s':'Event driven'}</td><td>${escapeHtml(p.runCount??0)}</td><td>${escapeHtml(formatDate(p.lastCompletedAt||p.lastStartedAt||'Never'))}</td><td>${key?`<label class="switch"><input type="checkbox" data-process="${escapeHtml(p.id)}" ${enabled?'checked':''}> ${enabled?'On':'Off'}</label>`:'Managed'}</td></tr>`}}$('process-body').innerHTML=html;$$('[data-process]').forEach(input=>input.addEventListener('change',()=>toggleProcess(input.dataset.process,input.checked,input)));$$('[data-view-logs]').forEach(b=>b.onclick=()=>navigate('diagnostics','logs'))}
+async function toggleProcess(id,enabled,input){const key=PROCESS_KEYS[id];input.disabled=true;banner('activity-message',`${enabled?'Enabling':'Disabling'} activity. Saving will restart a running agent.`,'info');try{const result=await api.saveConfig({[key]:enabled});if(!result?.success)throw new Error(result?.error||'Save failed');toast(`Activity ${enabled?'enabled':'disabled'}; agent restart requested`);await refreshProcesses();await refreshStatus()}catch(error){toast('Unable to save activity: '+errorText(error),'error');await refreshProcesses()}finally{banner('activity-message','')}}
+function safeMarkdownHref(raw){try{const href=String(raw||'').replace(/&amp;/g,'&');const url=new URL(href,document.baseURI);return ['http:','https:','mailto:'].includes(url.protocol)?url.href:''}catch{return''}}
+function renderMarkdownInline(value){const tokens=[];let html=escapeHtml(value);html=html.replace(/`([^`]+)`/g,(_,code)=>{const key=`@@CODE${tokens.length}@@`;tokens.push(`<code>${code}</code>`);return key});let cursor=0;while(cursor<html.length){const start=html.indexOf('[',cursor),labelEnd=start<0?-1:html.indexOf('](',start);if(start<0||labelEnd<0)break;const urlEnd=html.indexOf(')',labelEnd+2);if(urlEnd<0)break;const label=html.slice(start+1,labelEnd),safe=safeMarkdownHref(html.slice(labelEnd+2,urlEnd)),replacement=safe?`<a href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">${label}</a>`:label;html=html.slice(0,start)+replacement+html.slice(urlEnd+1);cursor=start+replacement.length}html=html.replace(/[*][*]([^*]+)[*][*]/g,'<strong>$1</strong>').replace(/__([^_]+)__/g,'<strong>$1</strong>').replace(/~~([^~]+)~~/g,'<s>$1</s>').replace(/[*]([^*]+)[*]/g,'<em>$1</em>').replace(/_([^_]+)_/g,'<em>$1</em>');return html.replace(/@@CODE([0-9]+)@@/g,(_,index)=>tokens[Number(index)]||'')}
+function markdownTableCells(line){const source=String(line??'').trim();if(!source.includes('|'))return null;const text=source.replace(/^\|/,'').replace(/\|$/,''),cells=[],current=[];let escaped=false;for(const char of text){if(escaped){current.push(char);escaped=false;continue}if(char==='\\'){escaped=true;continue}if(char==='|'){cells.push(current.join('').trim());current.length=0;continue}current.push(char)}if(escaped)current.push('\\');cells.push(current.join('').trim());return cells.length>1?cells:null}
+function markdownTableDivider(cells){return Array.isArray(cells)&&cells.length>0&&cells.every(cell=>/^:?-{3,}:?$/.test(cell.replace(/\s/g,'')))}
+function renderMarkdownTable(headers,rows){const width=headers.length,cell=(value,tag)=>`<${tag}>${renderMarkdownInline(value)}</${tag}>`,normalize=row=>Array.from({length:width},(_,index)=>row[index]||'');const head=normalize(headers).map(value=>cell(value,'th')).join(''),body=rows.map(row=>`<tr>${normalize(row).map(value=>cell(value,'td')).join('')}</tr>`).join('');return `<div class="markdown-table-scroll"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`}
+function renderMarkdownBlocks(source){const LF=String.fromCharCode(10),lines=source.split(LF),out=[];let paragraph=[];const flush=()=>{if(paragraph.length){out.push(`<p>${renderMarkdownInline(paragraph.join(LF)).split(LF).join('<br>')}</p>`);paragraph=[]}};const listItem=line=>{const item=line.trim();if(['-','*','+'].includes(item[0])&&item[1]===' ')return {ordered:false,text:item.slice(2)};const dot=item.indexOf('.'),prefix=dot<0?'':item.slice(0,dot);if(dot>0&&item[dot+1]===' '&&Number.isInteger(Number(prefix)))return {ordered:true,text:item.slice(dot+2)};return null};for(let i=0;i<lines.length;){const line=lines[i],trimmed=line.trim(),tableHeaders=markdownTableCells(line),tableDivider=i+1<lines.length?markdownTableCells(lines[i+1]):null;if(tableHeaders&&tableDivider&&tableHeaders.length===tableDivider.length&&markdownTableDivider(tableDivider)){flush();const rows=[];i+=2;while(i<lines.length){const row=markdownTableCells(lines[i]);if(!row||row.length!==tableHeaders.length)break;rows.push(row);i++}out.push(renderMarkdownTable(tableHeaders,rows));continue}if(!trimmed){flush();i++;continue}const hashes=line.match(/^#+ /);if(hashes&&hashes[0].length<=5){flush();const level=hashes[0].length-1;out.push(`<h${level}>${renderMarkdownInline(line.slice(hashes[0].length))}</h${level}>`);i++;continue}if(['---','***','___'].includes(trimmed)){flush();out.push('<hr>');i++;continue}if(trimmed.startsWith('>')){flush();const quote=[];while(i<lines.length&&lines[i].trimStart().startsWith('>')){const value=lines[i].trimStart().slice(1);quote.push(value.startsWith(' ')?value.slice(1):value);i++}out.push(`<blockquote>${renderMarkdownInline(quote.join(LF)).split(LF).join('<br>')}</blockquote>`);continue}const firstItem=listItem(line);if(firstItem){flush();const items=[],ordered=firstItem.ordered;while(i<lines.length){const item=listItem(lines[i]);if(!item||item.ordered!==ordered)break;items.push(`<li>${renderMarkdownInline(item.text)}</li>`);i++}out.push(`<${ordered?'ol':'ul'}>${items.join('')}</${ordered?'ol':'ul'}>`);continue}paragraph.push(line);i++}flush();return out.join('')}
+function renderMarkdown(text){const LF=String.fromCharCode(10),parts=String(text??'').split('```');return parts.map((part,index)=>{if(!(index%2))return renderMarkdownBlocks(part);const newline=part.indexOf(LF),code=newline>=0?part.slice(newline+1):part;return `<pre><code>${escapeHtml(code)}</code></pre>`}).join('')}
+function setBubbleMarkdown(bubble,text){bubble.classList.add('markdown');bubble.innerHTML=renderMarkdown(text)}
+function appendMessage(role,text){$('chat-empty')?.remove();const wrap=document.createElement('div');wrap.className='message '+(role==='operator'?'operator':'assistant');const author=document.createElement('div');author.className='author';author.textContent=role==='operator'?'You':'Assistant';const bubble=document.createElement('div');bubble.className='bubble';if(role!=='operator')setBubbleMarkdown(bubble,text);else bubble.textContent=text;wrap.append(author,bubble);$('conversation').append(wrap);$('conversation').scrollTop=$('conversation').scrollHeight;return bubble}
+let activeAssistant=null;let activeAssistantHasText=false;let activeAssistantText='';let activeThinkingProgress='';
+function beginAssistantTurn(){if(activeAssistant)return activeAssistant;activeAssistant=appendMessage('assistant','Thinking…');activeAssistant.classList.add('thinking');activeAssistant.classList.remove('markdown');activeAssistant.textContent='Thinking…';activeAssistantHasText=false;activeAssistantText='';activeThinkingProgress='';return activeAssistant}
+function appendThinkingProgress(text){const bubble=beginAssistantTurn();const clean=typeof text==='string'?text:'';if(clean){activeThinkingProgress=(activeThinkingProgress+clean).slice(-6000);bubble.textContent='Thinking…\n\n'+activeThinkingProgress}$('conversation').scrollTop=$('conversation').scrollHeight}
+function appendAssistantDelta(text){if(!text)return;const bubble=beginAssistantTurn();if(!activeAssistantHasText){bubble.classList.remove('thinking');activeAssistantHasText=true;activeThinkingProgress='';activeAssistantText=''}activeAssistantText+=text;setBubbleMarkdown(bubble,activeAssistantText);$('conversation').scrollTop=$('conversation').scrollHeight}
+function completeAssistantTurn(text,status){const clean=typeof text==='string'?text:'';const bubble=activeAssistant;if(bubble){if(!activeAssistantHasText){bubble.classList.remove('thinking');setBubbleMarkdown(bubble,clean||((status==='error'||status==='interrupted')?'The assistant could not complete this response.':'(No response returned.)'))}activeAssistant=null;activeAssistantHasText=false;activeAssistantText='';activeThinkingProgress=''}else if(clean){appendMessage('assistant',clean)}$(`chat-send`).disabled=!state.chatConnected}
+function failAssistantTurn(message){if(activeAssistant){activeAssistant.classList.remove('thinking');setBubbleMarkdown(activeAssistant,message);activeAssistant=null;activeAssistantHasText=false;activeAssistantText='';activeThinkingProgress=''}else appendMessage('assistant',message)}
+async function refreshAssistant(){try{const status=await api.agentRuntimeStatus();state.assistant=status;$('ov-assistant').textContent=!status.activated?'Not activated':status.running?'Ready':'Stopped';$('ov-assistant-detail').textContent=!status.activated?'Enter an install code on the Assistant page':`Model ${status.model}`;$('assistant-detail').textContent=!status.activated?'Not activated on this device yet.':`Model ${status.model} · Workspace ${status.workspacePath}`+(status.tokenPersisted?'':' · Activation is not stored securely on this system; activate again after restarting.');$('chat-connect').disabled=!status.activated||state.chatConnected;if(!status.activated&&state.page==='chat')showActivationPrompt()}catch(error){$('ov-assistant').textContent='Unavailable';$('ov-assistant-detail').textContent=errorText(error)}}
+function showActivationPrompt(){if($('activation-prompt'))return;const card=document.createElement('div');card.id='activation-prompt';card.className='request-card';const title=document.createElement('strong');title.textContent='Activate the assistant';const text=document.createElement('p');text.textContent='Enter the one-time install code from your Novaris administrator. AI requests go through the Novaris server, so no provider keys are stored on this device.';const field=document.createElement('label');field.className='field';const label=document.createElement('span');label.textContent='Install code';const input=document.createElement('input');input.type='password';input.autocomplete='off';field.append(label,input);const actions=document.createElement('div');actions.className='actions';const activate=document.createElement('button');activate.className='btn primary';activate.textContent='Activate';activate.onclick=async()=>{const code=input.value.trim();if(!code){toast('Enter the install code.','error');input.focus();return}busy(activate,true,'Activating…');try{const result=await api.agentRuntimeActivate(code);input.value='';if(!result?.success)throw new Error(result?.message||'Activation failed');card.remove();toast('Assistant activated.');await refreshAssistant();await connectChat()}catch(error){toast('Activation failed: '+errorText(error),'error');busy(activate,false,'Activate')}};actions.append(activate);card.append(title,text,field,actions);$('conversation').append(card);$('conversation').scrollTop=$('conversation').scrollHeight}
+async function connectChat(){const btn=$('chat-connect');busy(btn,true,'Starting assistant…');try{const result=await api.agentChatConnect();if(!result.success)throw new Error(result.message||'Connection failed');const session=await api.agentChatCreateSession();if(session?.success===false)throw new Error(session.message||'Session creation failed');state.chatConnected=true;$('chat-send').disabled=false;$('chat-input').disabled=false;$('chat-disconnect').disabled=false;btn.disabled=true;btn.textContent='Connected';statusBadge($('chat-status'),'Connected','success');$('chat-input').focus()}catch(error){state.chatConnected=false;statusBadge($('chat-status'),'Connection failed','danger');const message=errorText(error);appendMessage('assistant','Connection failed: '+message);if(/not activated/i.test(message))showActivationPrompt();toast('The assistant could not start: '+message,'error')}finally{if(!state.chatConnected)busy(btn,false,'Start chat');refreshAssistant()}}
+async function sendChat(){const text=$('chat-input').value.trim();if(!text||!state.chatConnected)return;const btn=$('chat-send');busy(btn,true,'Sending…');appendMessage('operator',text);beginAssistantTurn();$('chat-input').value='';try{const result=await api.agentChatSend(text);if(!result.success)throw new Error(result.message||'Send failed')}catch(error){failAssistantTurn('Send failed: '+errorText(error))}finally{busy(btn,false,'Send message')}}
+function markDisconnected(){state.chatConnected=false;$('chat-send').disabled=true;$('chat-input').disabled=true;$('chat-disconnect').disabled=true;$('chat-connect').disabled=!state.assistant.activated;$('chat-connect').textContent='Start chat';statusBadge($('chat-status'),'Disconnected','neutral')}
+async function disconnectChat(){await api.agentChatDisconnect();markDisconnected();appendMessage('assistant','Disconnected.')}
+function addApprovalRequest(data){dropEmptyAssistantTurn();const payload=data?.payload||{},card=document.createElement('div');card.className='request-card approval-card';const title=document.createElement('strong');title.textContent='Approval required';const description=document.createElement('p');description.style.whiteSpace='pre-line';description.textContent=payload.message||'The assistant wants to change files.';card.append(title,description);if(Array.isArray(payload.actions)&&payload.actions.length){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Show the exact changes';const block=document.createElement('pre');block.className='request-command';block.textContent=JSON.stringify(payload.actions,null,2);details.append(summary,block);card.append(details)}const actions=document.createElement('div');actions.className='actions';const buttons=[];const respond=async(choice,button)=>{buttons.forEach(b=>b.disabled=true);busy(button,true,'Submitting…');try{const result=await api.agentChatRespond('approval',choice,undefined,data.session_id);if(result?.success===false)throw new Error(result.message||'Response rejected');card.remove();toast(choice==='deny'?'Change denied.':'Change approved.')}catch(error){toast('Response failed: '+errorText(error),'error');busy(button,false,button.dataset.label);buttons.forEach(b=>b.disabled=false)}};const addChoice=(choice,label,help,primary=false)=>{const button=document.createElement('button');button.type='button';button.className=choice==='deny'?'btn danger':primary?'btn primary':'btn';button.textContent=label;button.dataset.label=label;button.title=help;button.onclick=async()=>{if(choice==='always'&&!await confirmAction('Always allow these changes?','The assistant will be able to make this kind of file change on this device without asking again.','Always allow'))return;await respond(choice,button)};buttons.push(button);actions.append(button)};addChoice('once','Allow once','Apply this change only.',true);addChoice('session','Allow for this chat','Allow this kind of change until this chat ends.');addChoice('always','Always allow','Allow this kind of change on this device from now on.');addChoice('deny','Deny','Do not make this change.');card.append(actions);$('conversation').append(card);$('conversation').scrollTop=$('conversation').scrollHeight}
+function addClarifyRequest(data){dropEmptyAssistantTurn();const payload=data?.payload||{},card=document.createElement('div');card.className='request-card';const title=document.createElement('strong');title.textContent='The assistant has a question';const text=document.createElement('p');text.textContent=payload.question||'The assistant is waiting for your answer.';const field=document.createElement('label');field.className='field';const fieldLabel=document.createElement('span');fieldLabel.textContent='Your answer';const input=document.createElement('input');input.type='text';input.autocomplete='off';field.append(fieldLabel,input);const actions=document.createElement('div');actions.className='actions';const submit=document.createElement('button');submit.className='btn primary';submit.textContent='Answer';const send=async()=>{const value=input.value.trim();if(!value){input.focus();return}busy(submit,true,'Submitting…');try{const result=await api.agentChatRespond('clarify',value,payload.clarify_id,data.session_id);if(result?.success===false)throw new Error(result.message||'Response rejected');card.remove();appendMessage('operator',value);beginAssistantTurn()}catch(error){toast('Response failed: '+errorText(error),'error');busy(submit,false,'Answer')}};submit.onclick=send;input.onkeydown=e=>{if(e.key==='Enter')send()};actions.append(submit);card.append(title,text,field,actions);$('conversation').append(card);$('conversation').scrollTop=$('conversation').scrollHeight;input.focus()}
+function dropEmptyAssistantTurn(){if(activeAssistant&&!activeAssistantHasText){activeAssistant.closest('.message')?.remove();activeAssistant=null;activeThinkingProgress=''}}
+function showToolProgress(text){if(activeAssistant&&activeAssistantHasText)return;appendThinkingProgress(text)}
+function handleChatEvent(data){const p=data?.payload||{};switch(data?.type){case 'message.start':beginAssistantTurn();break;case 'message.delta':appendAssistantDelta(p.text||'');break;case 'message.complete':if(activeAssistantHasText)completeAssistantTurn('',p.status);break;case 'reasoning.delta':showToolProgress(p.text||'');break;case 'tool.result':showToolProgress(`${p.name} ${p.status==='error'?'failed':'done'}\n`);break;case 'approval.request':addApprovalRequest(data);break;case 'clarify.request':addClarifyRequest(data);break;case 'error':failAssistantTurn('Error: '+(p.message||'Unknown error'));break;case 'session.idle':if(activeAssistant)completeAssistantTurn('',activeAssistantHasText?'ok':'error');break;case 'connection.closed':if(state.chatConnected){markDisconnected();failAssistantTurn('The assistant stopped. Select Start chat to start it again.')}break}}
+const SETTING_NAMES=['apiUrl','assetTag','collectInterval','reportInterval','retryAttempts','retryDelay','collectSoftware','softwareCollectionInterval','collectConnectedDevices','collectNetworkNeighbors','collectPatchStatus','patchStatusInterval','collectSecurityPosture','securityPostureInterval','collectLogs','logsInterval','logsMaxBatchSize','logsMinSeverity','logsIncludeRaw','collectSecurityEvents','securityEventsMinSeverity','collectProcesses','processInterval','pollResponseActions','responseActionsInterval','responseActionTimeout','remoteActionsEnabled','responseActionsDryRun','logLevel','logFile','autoStart','agentMode','collectSyslog','syslogPort','syslogInterval','collectSnmp','snmpCommunity','snmpInterval','collectActiveDiscovery','activeDiscoveryInterval','collectZeekLogs','zeekLogDir','zeekLogsInterval'];
+function populateSettings(config){const form=$('settings-form');for(const name of SETTING_NAMES){const input=form.elements[name];if(!input)continue;if(input.type==='checkbox')input.checked=Boolean(config[name]);else input.value=config[name]??''}form.elements.snmpTargets.value=(config.snmpTargets||[]).join(', ');form.elements.apiKey.value='';$('api-key-state').textContent=config.apiKey?'A key is configured. Leave blank to keep it.':'No API key configured.';state.settingsSnapshot=settingsSignature();setDirty(false)}
+function settingsSignature(){const form=$('settings-form'),data={};for(const name of SETTING_NAMES){const i=form.elements[name];data[name]=i.type==='checkbox'?i.checked:i.value}data.snmpTargets=form.elements.snmpTargets.value;data.apiKey=form.elements.apiKey.value;return JSON.stringify(data)}
+function setDirty(dirty){$('dirty-badge').hidden=!dirty;$('settings-save').disabled=!dirty;$('settings-discard').disabled=!dirty;$('settings-footer-text').textContent=dirty?'Changes require save; a running agent will restart.':'No unsaved changes'}
+function collectSettings(){const form=$('settings-form'),result={};for(const name of SETTING_NAMES){const input=form.elements[name];if(input.type==='checkbox')result[name]=input.checked;else if(input.type==='number')result[name]=Number(input.value);else result[name]=input.value.trim()}result.snmpTargets=form.elements.snmpTargets.value.split(',').map(v=>v.trim()).filter(Boolean);const key=form.elements.apiKey.value.trim();if(key)result.apiKey=key;return result}
+async function saveSettings(event){event.preventDefault();const form=$('settings-form');if(!form.reportValidity()){banner('settings-message','Correct the highlighted fields before saving.');return}const values=collectSettings();try{new URL(values.apiUrl)}catch{banner('settings-message','Enter a valid Backend API URL.');form.elements.apiUrl.focus();return}if(values.remoteActionsEnabled&&!values.responseActionsDryRun&&!(state.config.remoteActionsEnabled&&!state.config.responseActionsDryRun)){if(!await confirmAction('Enable real remote actions?','Remote commands may execute on this endpoint because dry-run mode is off. Only continue if this device is authorized for remote execution.','Enable real actions'))return}const btn=$('settings-save');busy(btn,true,'Saving…');try{const result=await api.saveConfig(values);if(!result?.success)throw new Error(result?.error||'Configuration was not saved');toast(state.status.running?'Configuration saved; agent restart requested':'Configuration saved');banner('settings-message','Configuration saved successfully. A running agent is restarted automatically.','success');state.config={...state.config,...values};form.elements.apiKey.value='';await loadIdentity();await refreshStatus();if(!state.config.apiUrl||!state.config.apiKey||!state.config.assetTag){}else navigate('overview')}catch(error){banner('settings-message','Unable to save configuration: '+errorText(error))}finally{busy(btn,false,'Save changes')}}
+function selectSettings(name){$$('[data-settings]').forEach(b=>b.classList.toggle('active',b.dataset.settings===name));$$('.settings-section').forEach(s=>s.classList.toggle('active',s.dataset.section===name))}
+function selectDiagnostic(name){$$('[data-diag]').forEach(b=>b.classList.toggle('active',b.dataset.diag===name));$$('.diag-panel').forEach(p=>p.classList.toggle('active',p.dataset.panel===name));if(name==='logs')refreshLogs()}
+async function refreshLogs(){const btn=$('logs-refresh');busy(btn,true,'Loading…');try{const result=await api.getAgentLogs(Number($('log-lines').value));state.logs=result.lines||[];$('log-message').textContent=result.message||`${state.logs.length} recent lines`;renderLogs()}catch(error){state.logs=[];$('log-view').textContent='Unable to load logs: '+errorText(error);$('log-message').textContent='Log loading failed'}finally{busy(btn,false,'Refresh')}}
+function renderLogs(){const search=$('log-search').value.toLowerCase(),level=$('log-level').value;const lines=state.logs.filter(line=>(!search||String(line).toLowerCase().includes(search))&&(level==='all'||new RegExp(`\\b${level}\\b`,'i').test(line)));$('log-view').textContent=lines.join('\n')||'No log lines match the current filters.'}
+async function checkUpdate(silent=false){const btn=$('check-update');if(!silent)busy(btn,true,'Checking…');$('update-result').textContent='Checking…';try{const result=await api.checkForUpdate();state.update=result;$('update-current').textContent=result.currentVersion||state.version;$('update-latest').textContent=result.latestVersion||'No release reported';$('update-result').textContent=result.message|| (result.updateAvailable?'Update available':'Up to date');$('update-notes').textContent=result.updateInfo?.releaseNotes||'No release notes supplied';$('install-update').disabled=!result.updateAvailable;$('side-update').hidden=!result.updateAvailable;$('overview-update').hidden=!(result.updateAvailable||result.error);$('overview-update-title').textContent=result.updateAvailable?'Update available':'Update check failed';$('overview-update-copy').textContent=result.message||''}catch(error){state.update=null;$('update-result').textContent='Check failed: '+errorText(error);$('overview-update').hidden=false;$('overview-update-title').textContent='Update check failed';$('overview-update-copy').textContent=errorText(error)}finally{if(!silent)busy(btn,false,'Check for updates')}}
+async function installUpdate(){if(!state.update?.updateAvailable)return;if(!await confirmAction('Download and install update?',`Novaris Agent v${state.update.latestVersion} will download and an external installer may open. Agent operations may be interrupted.`,'Download update'))return;const btn=$('install-update');busy(btn,true,'Downloading…');$('download-wrap').hidden=false;try{const result=await api.downloadAndInstallUpdate();if(!result.success)throw new Error(result.message||'Install failed');$('update-result').textContent=result.message||'Installer opened';toast('Installer opened. Complete installation to finish the update.')}catch(error){$('update-result').textContent='Install failed: '+errorText(error);toast('Update failed: '+errorText(error),'error')}finally{busy(btn,false,'Download and install')}}
+async function openPath(kind){try{const result=await (kind==='config'?api.openConfig():api.openLogs());if(result?.success===false)throw new Error(result.error||'Path unavailable')}catch(error){toast(`Unable to open ${kind}: ${errorText(error)}`,'error')}}
+function bind(){$$('.nav button').forEach(b=>b.onclick=()=>navigate(b.dataset.page));$$('[data-goto]').forEach(b=>b.onclick=()=>navigate(b.dataset.goto,b.dataset.tab));const overflowBtn=$('overflow-btn'),overflowMenu=$('top-action-menu');overflowBtn.onclick=e=>{e.stopPropagation();const opening=overflowMenu.hidden;overflowMenu.hidden=!opening;overflowBtn.setAttribute('aria-expanded',String(opening))};document.addEventListener('click',()=>{overflowMenu.hidden=true;overflowBtn.setAttribute('aria-expanded','false')});document.addEventListener('keydown',e=>{if(e.key==='Escape'){overflowMenu.hidden=true;overflowBtn.setAttribute('aria-expanded','false')}});$('lifecycle-btn').onclick=lifecycle;$('process-refresh').onclick=refreshProcesses;$('process-search').oninput=e=>{state.processSearch=e.target.value;renderProcesses()};$$('.filter-btn').forEach(b=>b.onclick=()=>{state.processFilter=b.dataset.filter;$$('.filter-btn').forEach(x=>x.classList.toggle('active',x===b));renderProcesses()});$('chat-connect').onclick=connectChat;$('chat-disconnect').onclick=disconnectChat;$('chat-send').onclick=sendChat;$('chat-input').onkeydown=e=>{if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){e.preventDefault();sendChat()}};$$('[data-settings]').forEach(b=>b.onclick=()=>selectSettings(b.dataset.settings));$('settings-form').addEventListener('input',()=>setDirty(settingsSignature()!==state.settingsSnapshot));$('settings-form').onsubmit=saveSettings;$('settings-discard').onclick=()=>populateSettings(state.config);$$('[data-diag]').forEach(b=>b.onclick=()=>selectDiagnostic(b.dataset.diag));$('logs-refresh').onclick=refreshLogs;$('log-search').oninput=renderLogs;$('log-level').onchange=renderLogs;$('log-lines').onchange=refreshLogs;$('logs-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('log-view').textContent);toast('Visible logs copied')}catch(error){toast('Clipboard unavailable','error')}};$$('[data-open]').forEach(b=>b.onclick=()=>openPath(b.dataset.open));$('check-update').onclick=()=>checkUpdate(false);$('install-update').onclick=installUpdate;$('mode-endpoint').onclick=()=>pickAgentMode('endpoint');$('mode-gateway').onclick=()=>pickAgentMode('network_gateway')}
+async function init(){bind();api.onAgentStatusChanged((_event,data)=>{state.status={...state.status,...data};updateGlobalStatus()});api.onUpdateDownloadProgress((_event,data)=>{if(typeof data?.percent==='number'){$('download-wrap').hidden=false;$('download-bar').style.width=data.percent+'%';$('download-text').textContent=`Downloading… ${data.percent}%`;$('download-wrap').querySelector('[role=progressbar]').setAttribute('aria-valuenow',data.percent)}});api.onAgentChatEvent((_event,data)=>handleChatEvent(data));await Promise.all([refreshStatus(),loadIdentity(),loadVersion(),refreshAssistant(),refreshProcesses()]);state.initialized=true;checkUpdate(true);setInterval(refreshStatus,10000)}
+document.addEventListener('DOMContentLoaded',init);
+</script>
 </body>
 </html>
