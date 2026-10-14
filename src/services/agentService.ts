@@ -222,6 +222,18 @@ export class AgentService {
     this.processRegistry.registerDefaults(this.config);
   }
 
+  /**
+   * Remembers runtime state in config.json. The agent keeps working from memory
+   * if the file cannot be written, so a failure is only logged.
+   */
+  private persistConfig(fields: Partial<AgentConfig>): void {
+    try {
+      saveConfig(fields);
+    } catch (error) {
+      this.logger.warn('Failed to persist agent state to config.json', { fields: Object.keys(fields), error: (error as Error).message });
+    }
+  }
+
   private async registerOrFindDevice(): Promise<void> {
     try {
       this.logger.info(`Looking up or registering device with asset tag: ${this.config.assetTag}`);
@@ -247,7 +259,7 @@ export class AgentService {
         if (asset.deviceId) {
           this.logger.info(`Found existing device with ID: ${asset.deviceId} for asset tag: ${this.config.assetTag}`);
           this.config.deviceId = asset.deviceId;
-          saveConfig({ deviceId: asset.deviceId });
+          this.persistConfig({ deviceId: asset.deviceId });
           return;
         }
       }
@@ -259,7 +271,7 @@ export class AgentService {
 
       const deviceId = await this.reportingService.registerDevice(deviceInfo, this.config.assetTag);
       this.config.deviceId = deviceId;
-      saveConfig({ deviceId });
+      this.persistConfig({ deviceId });
 
       this.logger.info(`Device registered with ID: ${deviceId} for asset tag: ${this.config.assetTag}`);
     } catch (error) {
@@ -474,7 +486,7 @@ export class AgentService {
     try {
       const { knownDevices, events } = await this.activeDiscoveryCollector.collect(this.config.knownNetworkDevices || []);
       this.config.knownNetworkDevices = knownDevices;
-      saveConfig({ knownNetworkDevices: knownDevices });
+      this.persistConfig({ knownNetworkDevices: knownDevices });
       await this.handleCollectedSecurityEvents(events);
     } catch (error: any) {
       this.processRegistry.fail('network-discovery.scan', error);
@@ -727,7 +739,7 @@ export class AgentService {
       this.lastLogsCursorAt = cursor;
       // persist cursor so restarts don't resend from scratch
       this.config.logsCursor = { last_collected_at: cursor.toISOString() };
-      saveConfig({ logsCursor: this.config.logsCursor });
+      this.persistConfig({ logsCursor: this.config.logsCursor });
     } catch (error: any) {
       this.processRegistry.fail('logs.reporting', error);
       console.log(error);
