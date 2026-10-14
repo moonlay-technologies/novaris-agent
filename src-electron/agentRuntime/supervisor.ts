@@ -39,7 +39,7 @@ export class AgentRuntimeSupervisor {
   private stopping = false;
   private restartTimer: NodeJS.Timeout | null = null;
   private restartDelayMs = 1_000;
-  private launch: { policy: LockedAgentPolicy; installToken: string } | null = null;
+  private launch: { policy: LockedAgentPolicy; accessToken: string } | null = null;
 
   constructor(private readonly options: AgentSupervisorOptions) {}
 
@@ -48,8 +48,8 @@ export class AgentRuntimeSupervisor {
   }
 
   /** Starts the runtime (or returns the running/starting one) and resolves once it accepts connections. */
-  start(policy: LockedAgentPolicy, installToken: string): Promise<RuntimeEndpoint> {
-    this.launch = { policy, installToken };
+  start(policy: LockedAgentPolicy, accessToken: string): Promise<RuntimeEndpoint> {
+    this.launch = { policy, accessToken };
     this.stopping = false;
     if (this.endpoint) return Promise.resolve(this.endpoint);
     if (!this.starting) {
@@ -58,6 +58,17 @@ export class AgentRuntimeSupervisor {
       });
     }
     return this.starting;
+  }
+
+  /** Hands a refreshed user JWT to the running runtime over stdin; later restarts use it too. */
+  updateAccessToken(accessToken: string): void {
+    if (!this.launch || this.launch.accessToken === accessToken) return;
+    this.launch = { ...this.launch, accessToken };
+    const stdin = this.child?.stdin;
+    if (stdin && !stdin.destroyed) {
+      stdin.write(`${JSON.stringify({ type: 'access_token', token: accessToken })}
+`);
+    }
   }
 
   async stop(): Promise<void> {
@@ -99,7 +110,7 @@ export class AgentRuntimeSupervisor {
     }
     Object.assign(env, {
       NOVARIS_POLICY_FILE: policyPath,
-      NOVARIS_INSTALL_TOKEN: launch.installToken,
+      NOVARIS_ACCESS_TOKEN: launch.accessToken,
       NOVARIS_RUNTIME_TOKEN: runtimeToken,
       NOVARIS_DATA_DIR: dataDir,
       NOVARIS_RUNTIME_PORT: '0',
@@ -113,6 +124,8 @@ export class AgentRuntimeSupervisor {
       windowsHide: true,
     });
     this.child = child;
+    // A token update can race the process exiting; EPIPE here is harmless.
+    child.stdin?.on('error', (error) => this.logger.debug('Agent runtime stdin closed', { error: error.message }));
 
     return new Promise<RuntimeEndpoint>((resolve, reject) => {
       let settled = false;
@@ -175,7 +188,7 @@ export class AgentRuntimeSupervisor {
     this.restartTimer = setTimeout(() => {
       this.restartTimer = null;
       if (this.stopping || !this.launch) return;
-      this.start(this.launch.policy, this.launch.installToken).catch((error) =>
+      this.start(this.launch.policy, this.launch.accessToken).catch((error) =>
         this.logger.error('Agent runtime restart failed', { error: error.message })
       );
     }, delay);

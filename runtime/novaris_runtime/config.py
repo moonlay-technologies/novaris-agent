@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,9 +18,24 @@ class ConfigError(Exception):
     """Raised when the runtime cannot start with the configuration it was given."""
 
 
+class AccessToken:
+    """The signed-in user's JWT. Electron sends a new one over stdin when it refreshes the session."""
+
+    def __init__(self, value: str) -> None:
+        self._value = value
+        self._lock = threading.Lock()
+
+    def get(self) -> str:
+        with self._lock:
+            return self._value
+
+    def set(self, value: str) -> None:
+        with self._lock:
+            self._value = value
+
+
 @dataclass(frozen=True)
 class RuntimeConfig:
-    install_id: int
     policy_version: str
     backend_base_url: str
     # OpenAI-compatible base URL; ChatOpenAI appends /chat/completions.
@@ -31,7 +47,8 @@ class RuntimeConfig:
     allowed_tools: tuple[str, ...]
     workspace_path: Path
     data_dir: Path
-    install_token: str
+    # Authenticates the AI proxy and web search calls as the signed-in user.
+    access_token: AccessToken
     # Shared secret Electron uses to authenticate to the WebSocket server.
     runtime_token: str
     host: str = "127.0.0.1"
@@ -60,9 +77,9 @@ def load_config(env: Mapping[str, str] | None = None) -> RuntimeConfig:
     if web_search_url:
         _require_same_origin(backend_base_url, web_search_url, "webSearchEndpointUrl")
 
-    install_token = env.get("NOVARIS_INSTALL_TOKEN") or policy.get("installToken") or ""
-    if not install_token:
-        raise ConfigError("No install token was provided")
+    access_token = env.get("NOVARIS_ACCESS_TOKEN", "")
+    if not access_token:
+        raise ConfigError("NOVARIS_ACCESS_TOKEN is not set")
 
     runtime_token = env.get("NOVARIS_RUNTIME_TOKEN", "")
     if len(runtime_token) < MIN_RUNTIME_TOKEN_LENGTH:
@@ -78,7 +95,6 @@ def load_config(env: Mapping[str, str] | None = None) -> RuntimeConfig:
         raise ConfigError("NOVARIS_RUNTIME_PORT must be a number") from error
 
     return RuntimeConfig(
-        install_id=int(_required(policy, "installId")),
         policy_version=str(_required(policy, "policyVersion")),
         backend_base_url=backend_base_url,
         proxy_base_url=proxy_base_url,
@@ -89,7 +105,7 @@ def load_config(env: Mapping[str, str] | None = None) -> RuntimeConfig:
         allowed_tools=tuple(policy.get("allowedTools") or ()),
         workspace_path=Path(_required(policy, "workspacePath")),
         data_dir=Path(data_dir),
-        install_token=install_token,
+        access_token=AccessToken(access_token),
         runtime_token=runtime_token,
         port=port,
     )

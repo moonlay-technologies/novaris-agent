@@ -3,12 +3,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Keeps the install token encrypted with the OS keychain (DPAPI on Windows,
- * Keychain on macOS, libsecret on Linux) so the runtime can restart after the
- * app restarts without asking for a new install code. Without OS encryption
- * the token is kept in memory only.
+ * Keeps a secret (the signed-in user's session) encrypted with the OS keychain
+ * (DPAPI on Windows, Keychain on macOS, libsecret on Linux) so it survives an
+ * app restart. Without OS encryption nothing is written and the secret is kept
+ * in memory only.
  */
-export class InstallTokenStore {
+export class EncryptedFileStore {
   constructor(private readonly filePath: string) {}
 
   save(token: string): boolean {

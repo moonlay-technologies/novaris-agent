@@ -1,123 +1,120 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { AgentBootstrapService } from '../../dist/services/agentBootstrapService';
+import { AssistantPolicyPayload } from '../../dist/types/agentRuntime';
 import { getLogger } from '../../dist/utils/logger';
-import { AgentHeartbeatService } from './heartbeatService';
-import { InstallTokenStore } from './installTokenStore';
 import { AgentRuntimePolicy, LockedAgentPolicy } from './runtimePolicy';
 import { AgentRuntimeSupervisor, RuntimeEndpoint } from './supervisor';
 
 export interface AgentRuntimeStatus {
-  activated: boolean;
+  /** True when a Novaris user is signed in, which is all the assistant needs. */
+  available: boolean;
   running: boolean;
   model: string | null;
   workspacePath: string | null;
-  /** False when the OS cannot encrypt the install token, so it must be re-entered after a restart. */
-  tokenPersisted: boolean;
+}
+
+/** The parts of the user session the assistant depends on. */
+export interface AssistantUserSession {
+  isSignedIn(): boolean;
+  getToken(): Promise<string>;
+  request<T = unknown>(config: { method: 'GET'; url: string }): Promise<T>;
 }
 
 export interface AgentRuntimeManagerOptions {
   runtimeDir: string;
   supervisor: AgentRuntimeSupervisor;
-  heartbeat?: AgentHeartbeatService;
-  bootstrapService?: AgentBootstrapService;
+  userSession: AssistantUserSession;
 }
 
+// Left behind by the install-code activation this manager replaced.
+const LEGACY_FILES = ['install-token.bin', 'locked-policy.json'];
+
 /**
- * Owns the lifecycle of the local agent runtime: activation with an install
- * code, restoring it on launch, and stopping it on quit.
+ * Owns the lifecycle of the local agent runtime. It runs as the signed-in
+ * Novaris user: the policy comes from `GET /me/assistant` and the runtime
+ * calls the backend AI proxy with the user's JWT, which is pushed to the
+ * runtime again whenever the session refreshes it.
  */
 export class AgentRuntimeManager {
   private readonly logger = getLogger();
-  private readonly policyPath: string;
-  private readonly tokenStore: InstallTokenStore;
   private readonly supervisor: AgentRuntimeSupervisor;
-  private readonly heartbeat: AgentHeartbeatService;
-  private readonly bootstrapService: AgentBootstrapService;
+  private readonly userSession: AssistantUserSession;
   private policy: LockedAgentPolicy | null = null;
-  private installToken: string | null = null;
-  private tokenPersisted = false;
+  private loadingPolicy: Promise<LockedAgentPolicy> | null = null;
 
   constructor(options: AgentRuntimeManagerOptions) {
-    this.policyPath = path.join(options.runtimeDir, 'locked-policy.json');
-    this.tokenStore = new InstallTokenStore(path.join(options.runtimeDir, 'install-token.bin'));
     this.supervisor = options.supervisor;
-    this.heartbeat = options.heartbeat ?? new AgentHeartbeatService();
-    this.bootstrapService = options.bootstrapService ?? new AgentBootstrapService();
+    this.userSession = options.userSession;
+    for (const file of LEGACY_FILES) {
+      fs.rmSync(path.join(options.runtimeDir, file), { force: true });
+    }
   }
 
   status(): AgentRuntimeStatus {
     return {
-      activated: this.policy !== null && this.installToken !== null,
+      available: this.userSession.isSignedIn(),
       running: this.supervisor.isRunning,
       model: this.policy?.model ?? null,
       workspacePath: this.policy?.workspacePath ?? null,
-      tokenPersisted: this.tokenPersisted,
     };
   }
 
-  /** Activates the assistant on this device with a one-time install code from an administrator. */
-  async activate(apiUrl: string, deviceId: number, installCode: string): Promise<AgentRuntimeStatus> {
-    const payload = await this.bootstrapService.bootstrap({ apiUrl, installCode: installCode.trim(), deviceId });
-    if (!payload.installToken) {
-      throw new Error('The server did not issue an install token');
-    }
-    const policy = AgentRuntimePolicy.fromBootstrap(payload);
-
-    await this.supervisor.stop();
-    AgentRuntimePolicy.write(policy, this.policyPath);
-    this.tokenPersisted = this.tokenStore.save(payload.installToken);
-    if (!this.tokenPersisted) {
-      this.logger.warn('OS encryption is unavailable; the install token will not survive an app restart');
-    }
-
-    this.policy = policy;
-    this.installToken = payload.installToken;
-    this.logger.info('Agent activated', { installId: policy.installId, model: policy.model });
-    await this.startRuntime();
-    return this.status();
-  }
-
-  /** Restarts a previously activated runtime when the app launches. */
-  async restore(): Promise<void> {
-    if (!fs.existsSync(this.policyPath)) return;
-    const installToken = this.tokenStore.load();
-    if (!installToken) {
-      this.logger.warn('Saved agent policy found but no usable install token; activation is required');
-      return;
-    }
-    try {
-      this.policy = AgentRuntimePolicy.read(this.policyPath);
-    } catch (error) {
-      this.logger.error('Saved agent policy is unreadable; activation is required', { error });
-      return;
-    }
-    this.installToken = installToken;
-    this.tokenPersisted = true;
-    await this.startRuntime();
-  }
-
-  /** Endpoint for the chat client; starts the runtime if it is activated but not running. */
+  /** Endpoint for the chat client; starts the runtime as the signed-in user if it is not running. */
   async endpoint(): Promise<RuntimeEndpoint> {
-    if (!this.policy || !this.installToken) {
-      throw new Error('The assistant is not activated on this device yet. Enter an install code first.');
+    if (!this.userSession.isSignedIn()) {
+      throw new Error('Sign in on the Account page to use the assistant.');
     }
-    return this.supervisor.start(this.policy, this.installToken);
+    const policy = await this.loadPolicy();
+    const token = await this.userSession.getToken();
+    const endpoint = await this.supervisor.start(policy, token);
+    this.supervisor.updateAccessToken(token);
+    return endpoint;
+  }
+
+  /** Gives the running runtime the current JWT, refreshing it first if it is close to expiry. */
+  async refreshAccessToken(): Promise<void> {
+    if (!this.supervisor.isRunning || !this.userSession.isSignedIn()) return;
+    this.supervisor.updateAccessToken(await this.userSession.getToken());
+  }
+
+  /** Stops the runtime and forgets the policy, e.g. when the user signs out. */
+  async reset(): Promise<void> {
+    this.policy = null;
+    await this.supervisor.stop();
   }
 
   async stop(): Promise<void> {
-    this.heartbeat.stop();
     await this.supervisor.stop();
   }
 
-  private async startRuntime(): Promise<void> {
-    if (!this.policy || !this.installToken) return;
-    this.heartbeat.start(this.policy, this.installToken);
-    try {
-      await this.supervisor.start(this.policy, this.installToken);
-    } catch (error) {
-      // The chat panel retries on connect; activation itself still succeeded.
-      this.logger.error('Agent runtime failed to start', { error: (error as Error).message });
-    }
+  private loadPolicy(): Promise<LockedAgentPolicy> {
+    if (this.policy) return Promise.resolve(this.policy);
+    this.loadingPolicy ??= this.userSession
+      .request<{ data: Record<string, any> }>({ method: 'GET', url: '/me/assistant' })
+      .then((response) => {
+        const policy = AgentRuntimePolicy.fromPayload(toPolicyPayload(response.data));
+        this.policy = policy;
+        this.logger.info('Assistant policy loaded', { model: policy.model, policyVersion: policy.policyVersion });
+        return policy;
+      })
+      .finally(() => {
+        this.loadingPolicy = null;
+      });
+    return this.loadingPolicy;
   }
+}
+
+function toPolicyPayload(data: Record<string, any>): AssistantPolicyPayload {
+  return {
+    backendBaseUrl: data.backend_base_url,
+    proxyEndpointUrl: data.proxy_endpoint_url,
+    policyVersion: data.policy_version,
+    allowedTools: data.allowed_tools ?? [],
+    workspacePathRule: data.workspace_path_rule,
+    runtime: data.runtime ?? 'deepagents',
+    model: data.model ?? 'gpt-4o-mini',
+    maxInputTokens: Number(data.max_input_tokens) || 128000,
+    systemPrompt: data.system_prompt ?? '',
+    webSearchEndpointUrl: data.web_search_endpoint_url ?? null,
+  };
 }
