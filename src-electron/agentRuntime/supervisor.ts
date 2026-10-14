@@ -66,8 +66,7 @@ export class AgentRuntimeSupervisor {
     this.launch = { ...this.launch, accessToken };
     const stdin = this.child?.stdin;
     if (stdin && !stdin.destroyed) {
-      stdin.write(`${JSON.stringify({ type: 'access_token', token: accessToken })}
-`);
+      stdin.write(`${JSON.stringify({ type: 'access_token', token: accessToken })}\n`);
     }
   }
 

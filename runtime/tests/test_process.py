@@ -15,7 +15,8 @@ from typing import Any
 import pytest
 from websockets.asyncio.client import connect
 
-INSTALL_TOKEN = "device-install-token"
+ACCESS_TOKEN = "user-jwt-1"
+REFRESHED_TOKEN = "user-jwt-2"
 RUNTIME_TOKEN = "p" * 40
 
 
@@ -70,7 +71,6 @@ async def read_ready_port(process: subprocess.Popen[bytes]) -> int:
 
 async def test_runtime_process_end_to_end(tmp_path: Path, mock_proxy: str):
     policy = {
-        "installId": 1,
         "backendBaseUrl": mock_proxy,
         "proxyEndpointUrl": f"{mock_proxy}/api/v1/proxy/chat/completions",
         "policyVersion": "v2",
@@ -85,7 +85,7 @@ async def test_runtime_process_end_to_end(tmp_path: Path, mock_proxy: str):
     env = {
         **os.environ,
         "NOVARIS_POLICY_FILE": str(policy_file),
-        "NOVARIS_INSTALL_TOKEN": INSTALL_TOKEN,
+        "NOVARIS_ACCESS_TOKEN": ACCESS_TOKEN,
         "NOVARIS_RUNTIME_TOKEN": RUNTIME_TOKEN,
         "NOVARIS_DATA_DIR": str(tmp_path / "data"),
         "NOVARIS_RUNTIME_PORT": "0",
@@ -120,12 +120,28 @@ async def test_runtime_process_end_to_end(tmp_path: Path, mock_proxy: str):
                 elif event.get("type") == "session.idle":
                     break
 
+            # Electron hands over a refreshed JWT on stdin; the next model call must use it.
+            process.stdin.write((json.dumps({"type": "access_token", "token": REFRESHED_TOKEN}) + "\n").encode())  # type: ignore[union-attr]
+            process.stdin.flush()  # type: ignore[union-attr]
+            await asyncio.sleep(0.5)
+            await ws.send(
+                json.dumps({"jsonrpc": "2.0", "id": 3, "method": "prompt.submit", "params": {"session_id": session_id, "text": "again"}})
+            )
+            while True:
+                frame = json.loads(await asyncio.wait_for(ws.recv(), timeout=60))
+                event = frame.get("params") or {}
+                if event.get("type") == "error":
+                    raise AssertionError(event["payload"])
+                if event.get("type") == "session.idle":
+                    break
+
         assert text == "Hello from the proxy."
         request = MockProxy.requests[0]
-        assert request["auth"] == f"Bearer {INSTALL_TOKEN}"
+        assert request["auth"] == f"Bearer {ACCESS_TOKEN}"
         assert request["body"]["model"] == "gpt-4o-mini"
         assert request["body"]["stream"] is True
         assert request["body"]["stream_options"] == {"include_usage": True}
+        assert MockProxy.requests[-1]["auth"] == f"Bearer {REFRESHED_TOKEN}"
         assert (tmp_path / "data" / "checkpoints.sqlite").exists()
 
         # Closing stdin is how Electron (or its death) stops the runtime.

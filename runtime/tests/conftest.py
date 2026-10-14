@@ -11,14 +11,13 @@ from langgraph.checkpoint.memory import InMemorySaver
 from fakes import ScriptedChatModel
 from novaris_runtime.agent import build_agent
 from novaris_runtime.approvals import ApprovalStore
-from novaris_runtime.config import RuntimeConfig
+from novaris_runtime.config import AccessToken, RuntimeConfig
 from novaris_runtime.session import ChatRuntime
 
 
 @pytest.fixture
 def runtime_config(tmp_path: Path) -> RuntimeConfig:
     return RuntimeConfig(
-        install_id=1,
         policy_version="v2",
         backend_base_url="http://localhost:3000",
         proxy_base_url="http://localhost:3000/api/v1/proxy",
@@ -29,7 +28,7 @@ def runtime_config(tmp_path: Path) -> RuntimeConfig:
         allowed_tools=("file_reader", "file_writer", "web_search"),
         workspace_path=tmp_path / "workspace",
         data_dir=tmp_path / "data",
-        install_token="install-token",
+        access_token=AccessToken("user-jwt"),
         runtime_token="r" * 40,
     )
 
@@ -78,7 +77,6 @@ def make_harness(runtime_config: RuntimeConfig) -> Callable[..., Harness]:
 def write_policy(tmp_path: Path) -> Callable[..., Path]:
     def factory(**fields: Any) -> Path:
         policy = {
-            "installId": 7,
             "backendBaseUrl": "https://novaris.example.com",
             "proxyEndpointUrl": "https://novaris.example.com/api/v1/proxy/chat/completions",
             "policyVersion": "v2",
