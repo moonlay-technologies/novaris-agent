@@ -41,13 +41,20 @@ export class ProcessRegistryService {
 
     register('agent.lifecycle', 'Novaris Agent', 'Main agent lifecycle and orchestration', 'lifecycle', true);
     register('agent.shutdown', 'Graceful shutdown', 'Stops timers and drains offline queues', 'lifecycle', true);
-    register('health.reporting', 'Health reporting', 'Reports CPU, memory, disk, uptime, software, and connected devices', 'reporting', true, config.reportInterval);
-    register('patch.reporting', 'Patch status reporting', 'Reports missing patches and pending updates', 'reporting', config.collectPatchStatus, config.patchStatusInterval);
-    register('security-posture.reporting', 'Security posture reporting', 'Reports antivirus, firewall, encryption, and posture state', 'reporting', config.collectSecurityPosture, config.securityPostureInterval);
-    register('logs.reporting', 'Operating system log reporting', 'Collects and reports incremental system logs', 'reporting', config.collectLogs, config.logsInterval);
-    register('processes.reporting', 'Process reporting', 'Collects and reports active process snapshots', 'reporting', config.collectProcesses, config.processInterval);
-    register('yara-scan.reporting', 'YARA scan reporting', 'Scans common risk directories for malware signatures', 'reporting', config.collectYaraScan, config.yaraScanInterval);
-    register('response-actions.polling', 'Response action polling', 'Polls and executes pending remote response actions', 'integration', config.responseActionsMode !== 'off', config.responseActionsInterval);
+    // Names follow the Settings labels so each activity can be found where it is configured.
+    register('health.reporting', 'Health and inventory reporting', 'Reports CPU, memory, disk and uptime, plus installed software and peripherals when they are turned on', 'reporting', true, config.reportInterval);
+    register('patch.reporting', 'Patch status', 'Reports missing patches and pending updates', 'reporting', config.collectPatchStatus, config.patchStatusInterval);
+    register('security-posture.reporting', 'Security posture', 'Reports antivirus, firewall, encryption, and posture state', 'reporting', config.collectSecurityPosture, config.securityPostureInterval);
+    register('logs.reporting', 'System logs', 'Collects and reports new system log entries, and detects security events in them when turned on', 'reporting', config.collectLogs, config.logsInterval);
+    register('processes.reporting', 'Running processes', 'Collects and reports snapshots of running processes', 'reporting', config.collectProcesses, config.processInterval);
+    register('yara-scan.reporting', 'Malware scan', 'Scans common risk directories for malware signatures (YARA)', 'reporting', config.collectYaraScan, config.yaraScanInterval);
+    register('response-actions.polling', 'Remote actions', 'Checks for and runs remote actions sent from the Novaris console', 'integration', config.responseActionsMode !== 'off', config.responseActionsInterval);
+    // Network Gateway mode only. Registered in every mode so they always exist, just disabled outside it.
+    const gateway = config.agentMode === 'network_gateway';
+    register('syslog.collection', 'Syslog collector', 'Receives syslog from network devices and forwards it', 'collection', gateway && config.collectSyslog);
+    register('snmp.polling', 'SNMP polling', 'Polls network devices over SNMP', 'collection', gateway && config.collectSnmp && (config.snmpTargets?.length ?? 0) > 0, config.snmpInterval);
+    register('network-discovery.scan', 'Device discovery', 'Scans the local network for new and changed devices', 'collection', gateway && config.collectActiveDiscovery, config.activeDiscoveryInterval);
+    register('zeek.collection', 'Zeek notices', 'Reads new Zeek notices and reports them as security events', 'collection', gateway && config.collectZeekLogs, config.zeekLogsInterval);
     register('offline-queue.processing', 'Offline queue processing', 'Retries reports queued while the backend was unavailable', 'integration', true, Math.max(30, config.reportInterval));
   }
 

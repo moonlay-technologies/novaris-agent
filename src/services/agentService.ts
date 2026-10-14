@@ -195,6 +195,10 @@ export class AgentService {
 
     this.syslogCollectorService.stop();
     this.zeekLogTailService.stop();
+    if (this.config.agentMode === 'network_gateway') {
+      if (this.config.collectSyslog) this.processRegistry.complete('syslog.collection');
+      if (this.config.collectZeekLogs) this.processRegistry.complete('zeek.collection');
+    }
 
     if (this.responseActionsInterval) {
       clearInterval(this.responseActionsInterval);
@@ -423,6 +427,8 @@ export class AgentService {
 
     this.logger.info(`Starting syslog collector (UDP port ${this.config.syslogPort}, flush interval ${this.config.syslogInterval}s)`);
     this.syslogCollectorService.start(this.config.syslogPort, this.config.syslogInterval);
+    // Listens continuously, so it shows as running until the agent stops.
+    this.processRegistry.start('syslog.collection');
   }
 
   private startSnmpReporting(): void {
@@ -503,6 +509,8 @@ export class AgentService {
     }
 
     this.zeekLogTailService.start(this.config.zeekLogsInterval, this.config.zeekLogDir);
+    // Tails continuously, so it shows as running until the agent stops.
+    this.processRegistry.start('zeek.collection');
   }
 
   private startLogsReporting(): void {
