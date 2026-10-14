@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import axios from 'axios';
 import { AgentService } from '../dist/services/agentService';
-import { loadConfig, saveConfig, getInstallDirectory } from '../dist/utils/config';
+import { loadConfig, readConfig, saveConfig, getInstallDirectory } from '../dist/utils/config';
 import { AgentConfig, DEFAULT_CONFIG } from '../dist/types/config';
 import { createLogger } from '../dist/utils/logger';
 import { DeviceInfoCollector } from '../dist/collectors/deviceInfoCollector';
@@ -849,17 +849,11 @@ ipcMain.handle('stop-agent', async () => {
 
 ipcMain.handle('get-config', () => {
   try {
-    console.log('IPC: get-config called');
-    console.log('Current working directory:', process.cwd());
-    const config = loadConfig();
-    console.log('Config loaded successfully');
-    console.log('Config apiUrl:', config.apiUrl);
-    console.log('Config assetTag:', config.assetTag);
-    return config;
+    // Not loadConfig: a configuration that is still missing a required field
+    // must come back with the values already saved, not as blank defaults.
+    return readConfig();
   } catch (error) {
-    console.error('Failed to load config in main process, returning defaults:', error);
-    console.error('Error details:', error);
-    // Return defaults if config loading fails
+    logger.error('Failed to read configuration, returning defaults', { error });
     return { ...DEFAULT_CONFIG } as AgentConfig;
   }
 });

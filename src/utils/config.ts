@@ -134,7 +134,28 @@ export function migrateLegacyConfig(config: LegacyConfig): Partial<AgentConfig> 
   return migrated;
 }
 
+/**
+ * Loads the configuration and requires the fields the agent cannot run without.
+ * Use readConfig to show or edit a configuration that may still be incomplete.
+ */
 export function loadConfig(): AgentConfig {
+  const config = readConfig();
+
+  // Validate required fields, naming all of them rather than one per attempt
+  const validation = validateConfig(config);
+  if (!validation.valid) {
+    throw new Error(validation.message as string);
+  }
+
+  return config;
+}
+
+/**
+ * The configuration as stored (defaults, then config.json, then environment
+ * variables), without validation, so a partly filled-in configuration keeps
+ * the values that are already there.
+ */
+export function readConfig(): AgentConfig {
   // Create default config file if it doesn't exist
   if (!fs.existsSync(ENV_CONFIG_FILE)) {
     try {
@@ -352,30 +373,23 @@ export function loadConfig(): AgentConfig {
   }
 
   // Merge: defaults -> file config -> environment variables (env overrides file, file overrides defaults)
-  const config = {
+  return {
     ...DEFAULT_CONFIG,
     ...fileConfig,
     ...envConfig,
   } as AgentConfig;
-
-  // Validate required fields, naming all of them rather than one per attempt
-  const validation = validateConfig(config);
-  if (!validation.valid) {
-    throw new Error(validation.message as string);
-  }
-
-  return config;
 }
 
+/** Merges the given fields into config.json. Throws if the file cannot be written. */
 export function saveConfig(config: Partial<AgentConfig>): void {
+  const existingConfig = fs.existsSync(ENV_CONFIG_FILE)
+    ? JSON.parse(fs.readFileSync(ENV_CONFIG_FILE, 'utf-8'))
+    : {};
+  const mergedConfig = { ...existingConfig, ...config };
   try {
-    const existingConfig = fs.existsSync(ENV_CONFIG_FILE)
-      ? JSON.parse(fs.readFileSync(ENV_CONFIG_FILE, 'utf-8'))
-      : {};
-    const mergedConfig = { ...existingConfig, ...config };
     fs.writeFileSync(ENV_CONFIG_FILE, JSON.stringify(mergedConfig, null, 2));
   } catch (error) {
-    console.error(`Failed to save config file: ${ENV_CONFIG_FILE}`, error);
+    throw new Error(`Cannot write ${ENV_CONFIG_FILE}: ${(error as Error).message}`);
   }
 }
 
