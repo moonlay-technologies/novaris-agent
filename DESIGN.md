@@ -1,7 +1,7 @@
 ---
 version: alpha
 name: Novaris Desktop Operations
-description: A calm, trustworthy desktop operations console for managing the Novaris monitoring agent and its Hermes integrations.
+description: A calm, trustworthy desktop operations console for managing the Novaris monitoring agent and its local AI assistant.
 colors:
   primary: "#0F6B4F"
   primary-hover: "#0B573F"
@@ -241,7 +241,6 @@ Use 8px rounding for controls and 12px for cards. Pills are limited to compact s
 - **Status card:** Icon, short label, explicit state, and one operational detail such as `Last report 2 min ago`. Never invent metrics not supplied by the runtime.
 - **Activity table:** Group rows by lifecycle, collection, reporting, and integration. Show state, interval, run count, last run, and configuration toggle. Failed rows expose a concise error with a path to logs.
 - **Form section:** Titled white card with aligned labels, validation close to fields, and optional advanced disclosure. Credentials are password fields and never repopulate with stored secrets.
-- **Channel card:** Telegram, Discord, Slack, and WhatsApp each receive a summary card with enabled/configured/runtime state and a single `Configure` action. Credential forms open as a dedicated page or side sheet, not four expanded forms at once.
 - **Chat workspace:** Conversation history occupies most of the page; connection controls live in a compact header; composer remains docked at the bottom. Approval, secret, sudo, and clarification requests render as explicit inline request cards.
 - **Log viewer:** Monospaced, selectable output with level filter, search, refresh, open-file, and copy actions. Preserve raw content; do not color entire lines when a small severity marker is sufficient.
 - **Switch:** Use for immediate binary configuration only. If changing a switch restarts the agent, label that consequence before confirmation and show the pending restart state.
@@ -253,7 +252,7 @@ Use 8px rounding for controls and 12px for cards. Pills are limited to compact s
 ### Do
 
 - Lead with current health and the next useful action.
-- Separate Overview, Activities, Hermes Chat, Channels, Settings, and Diagnostics.
+- Separate Overview, Activities, Assistant, Settings, and Diagnostics.
 - Preserve existing IPC/data contracts and label unavailable values honestly.
 - Use progressive disclosure for advanced intervals, retries, logging, and remote actions.
 - Keep credentials redacted after save and distinguish `Configured` from `Not configured`.

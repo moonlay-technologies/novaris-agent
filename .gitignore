@@ -18,3 +18,4 @@ resources/osquery/*/osqueryi.exe
 resources/yara/*/yr
 resources/yara/*/yr.exe
 
+plugins/

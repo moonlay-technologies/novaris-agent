@@ -141,7 +141,7 @@ export class ResponseActionService {
   private async executeAction(action: ResponseAction): Promise<ResponseActionExecutionResult> {
     const startedAt = new Date();
 
-    if (!this.config.pollResponseActions) {
+    if (this.config.responseActionsMode === 'off') {
       return this.buildResult(action.id, startedAt, false, 'Response actions polling disabled by configuration.');
     }
 
@@ -150,15 +150,8 @@ export class ResponseActionService {
       return this.buildResult(action.id, startedAt, false, `Action type "${action.actionType}" is not allowlisted.`);
     }
 
-    if (!this.config.remoteActionsEnabled) {
-      return this.buildResult(action.id, startedAt, true, 'Remote actions disabled; request acknowledged without execution.', {
-        dry_run: true,
-        action_type: action.actionType,
-      });
-    }
-
-    if (this.config.responseActionsDryRun) {
-      return this.buildResult(action.id, startedAt, true, 'Dry-run mode enabled; action not executed.', {
+    if (this.config.responseActionsMode !== 'execute') {
+      return this.buildResult(action.id, startedAt, true, 'Acknowledge-only mode; action not executed.', {
         dry_run: true,
         action_type: action.actionType,
       });

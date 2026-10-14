@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { YaraMatch } from '../types/yara';
 import { getLogger } from './logger';
+import { getInstallDirectory } from './config';
 
 const execFileAsync = promisify(execFile);
 
@@ -17,6 +18,19 @@ function platformDirFor(platform: NodeJS.Platform): YaraPlatformDir | null {
   return null;
 }
 
+export function yaraBinaryName(): string {
+  return os.platform() === 'win32' ? 'yr.exe' : 'yr';
+}
+
+/**
+ * Where the in-app installer places yara-x: next to config.json, which is always
+ * writable, unlike the packaged resources folder.
+ */
+export function yaraPluginDirectory(): string | null {
+  const platformDir = platformDirFor(os.platform());
+  return platformDir ? path.join(getInstallDirectory(), 'plugins', 'yara', platformDir) : null;
+}
+
 function resolveBinaryPath(): string | null {
   const platform = os.platform();
   const platformDir = platformDirFor(platform);
@@ -24,10 +38,10 @@ function resolveBinaryPath(): string | null {
     return null;
   }
 
-  const binaryName = platformDir === 'win32' ? 'yr.exe' : 'yr';
+  const binaryName = yaraBinaryName();
   const resourcesPath = (process as unknown as { resourcesPath?: string }).resourcesPath;
 
-  const candidates: string[] = [];
+  const candidates: string[] = [path.join(yaraPluginDirectory() as string, binaryName)];
   if (resourcesPath) {
     candidates.push(path.join(resourcesPath, 'yara', platformDir, binaryName));
   }
@@ -52,6 +66,15 @@ function getBinaryPath(): string | null {
 
 export function isYaraAvailable(): boolean {
   return getBinaryPath() !== null;
+}
+
+export function getYaraBinaryPath(): string | null {
+  return getBinaryPath();
+}
+
+/** Forget the resolved binary so a freshly installed or removed plugin is picked up. */
+export function resetYaraBinaryCache(): void {
+  cachedBinaryPath = undefined;
 }
 
 interface YaraScanLineRule {

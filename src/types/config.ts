@@ -1,5 +1,15 @@
 export type AgentMode = 'endpoint' | 'network_gateway';
 
+export type Severity = 'info' | 'warning' | 'error' | 'critical';
+
+/**
+ * How remote response actions are handled:
+ * - off: do not poll for actions at all
+ * - acknowledge: poll and acknowledge actions without executing them (dry run)
+ * - execute: run allowlisted actions on this device
+ */
+export type ResponseActionsMode = 'off' | 'acknowledge' | 'execute';
+
 export interface AgentConfig {
   apiUrl: string;
   apiKey: string;
@@ -7,14 +17,14 @@ export interface AgentConfig {
   deviceId?: number;
   hostname?: string;
   // Left unset until the first-run picker writes it (like assetTag/apiKey) - its absence is what
-  // gates showing that picker, so it must NOT get a DEFAULT_CONFIG value.
+  // gates showing that picker, so it must NOT get a DEFAULT_CONFIG value. Network monitoring
+  // collectors only run in 'network_gateway' mode; unset is treated as 'endpoint'.
   agentMode?: AgentMode;
-  collectInterval: number; // in seconds
   reportInterval: number; // in seconds
   retryAttempts: number;
   retryDelay: number; // in milliseconds
   collectSoftware: boolean;
-  softwareCollectionInterval: number; // number of report iterations between software collections
+  softwareInterval: number; // in seconds
   collectConnectedDevices: boolean;
   collectNetworkNeighbors: boolean;
   collectPatchStatus: boolean;
@@ -24,10 +34,9 @@ export interface AgentConfig {
   collectLogs: boolean;
   logsInterval: number; // in seconds
   logsMaxBatchSize: number;
-  logsMinSeverity: 'info' | 'warning' | 'error' | 'critical';
+  logsMinSeverity: Severity; // applies to collected logs and to every security event source
   logsIncludeRaw: boolean;
   collectSecurityEvents: boolean;
-  securityEventsMinSeverity: 'info' | 'warning' | 'error' | 'critical';
   logsCursor?: {
     last_collected_at?: string;
   };
@@ -38,19 +47,15 @@ export interface AgentConfig {
   yaraScanPaths?: string[]; // overrides the platform-default scan directories when set
   yaraScanMaxFiles: number;
   yaraScanMaxFileSizeBytes: number;
-  pollResponseActions: boolean;
+  responseActionsMode: ResponseActionsMode;
   responseActionsInterval: number; // in seconds
   responseActionTimeout: number; // in seconds
-  remoteActionsEnabled: boolean;
-  responseActionsDryRun: boolean;
   logLevel: 'error' | 'warn' | 'info' | 'debug';
   logFile?: string;
   autoStart: boolean; // Whether to launch the application automatically on system startup
 
   // --- Network Gateway mode (agentMode === 'network_gateway') ---
-  // These flags exist independently of agentMode - the mode picker just sets sensible
-  // defaults when chosen; agentService.ts checks each flag the same way it checks every
-  // other collect* flag, with no special-cased mode branch.
+  // Ignored in endpoint mode. The mode picker turns on sensible defaults when gateway is chosen.
   collectSyslog: boolean;
   syslogPort: number;
   syslogInterval: number; // in seconds - how often batched syslog messages are evaluated/reported
@@ -77,12 +82,11 @@ export interface AgentConfig {
 export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   apiUrl: 'http://localhost:3000/api/v1',
   apiKey: '',
-  collectInterval: 300, // 5 minutes
   reportInterval: 300, // 5 minutes
   retryAttempts: 3,
   retryDelay: 1000, // 1 second
   collectSoftware: true,
-  softwareCollectionInterval: 10, // collect software every 10 report iterations (approximately every 50 minutes if reportInterval is 5 minutes)
+  softwareInterval: 3600, // 1 hour - installed software changes rarely
   collectConnectedDevices: true,
   collectNetworkNeighbors: false,
   collectPatchStatus: true,
@@ -95,18 +99,15 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   logsMinSeverity: 'warning',
   logsIncludeRaw: false,
   collectSecurityEvents: true,
-  securityEventsMinSeverity: 'warning',
   collectProcesses: true,
   processInterval: 60, // 1 minute
   collectYaraScan: true,
   yaraScanInterval: 86400, // 24 hours - a real content scan is far more expensive than the other periodic checks
   yaraScanMaxFiles: 500,
   yaraScanMaxFileSizeBytes: 25 * 1024 * 1024, // 25MB
-  pollResponseActions: true,
+  responseActionsMode: 'acknowledge',
   responseActionsInterval: 60, // 1 minute
   responseActionTimeout: 30, // 30 seconds
-  remoteActionsEnabled: false,
-  responseActionsDryRun: true,
   logLevel: 'info',
   autoStart: false, // Application startup at login disabled by default
 

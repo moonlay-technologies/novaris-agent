@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   saveConfig: (config: unknown) => ipcRenderer.invoke('save-config', config),
 
+  // YARA scanner plugin
+  yaraPluginStatus: () => ipcRenderer.invoke('yara-plugin-status'),
+  yaraPluginInstall: () => ipcRenderer.invoke('yara-plugin-install'),
+  yaraPluginUninstall: () => ipcRenderer.invoke('yara-plugin-uninstall'),
+
   // System info
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
 
@@ -31,33 +36,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openConfig: () => ipcRenderer.invoke('open-config'),
   openLogs: () => ipcRenderer.invoke('open-logs'),
 
-  // Hermes bootstrap (detects existing local Hermes installs and skips
-  // the managed install flow when one is already present)
-  hermesBootstrap: (installCode: string) => ipcRenderer.invoke('hermes-bootstrap', installCode),
+  // Novaris user session. The JWT stays in the main process; only the profile reaches the renderer.
+  userSessionStatus: () => ipcRenderer.invoke('user-session-status'),
+  userLogin: (email: string, password: string) => ipcRenderer.invoke('user-login', email, password),
+  userLogout: () => ipcRenderer.invoke('user-logout'),
+  userChangePassword: (currentPassword: string, newPassword: string, confirmation: string) =>
+    ipcRenderer.invoke('user-change-password', currentPassword, newPassword, confirmation),
+  onUserSessionChanged: (callback: (event: any, data: any) => void) =>
+    ipcRenderer.on('user-session-changed', callback),
 
-  // Hermes gateway management. Secrets are redacted by the main process.
-  hermesGatewayGetConfig: () => ipcRenderer.invoke('hermes-gateway-get-config'),
-  hermesGatewaySaveConfig: (config: unknown) => ipcRenderer.invoke('hermes-gateway-save-config', config),
-  hermesGatewayStatus: () => ipcRenderer.invoke('hermes-gateway-status'),
-  hermesGatewayStart: () => ipcRenderer.invoke('hermes-gateway-start'),
-  hermesGatewayStop: () => ipcRenderer.invoke('hermes-gateway-stop'),
-  hermesGatewayRestart: () => ipcRenderer.invoke('hermes-gateway-restart'),
-  hermesPairingList: () => ipcRenderer.invoke('hermes-pairing-list'),
-  hermesPairingPending: () => ipcRenderer.invoke('hermes-pairing-pending'),
-  hermesPairingApprove: (platform: string, code: string) => ipcRenderer.invoke('hermes-pairing-approve', platform, code),
-  hermesPairingRevoke: (platform: string, userId: string) => ipcRenderer.invoke('hermes-pairing-revoke', platform, userId),
+  // Local AI assistant. The install token and runtime port/token never reach the renderer.
+  agentRuntimeStatus: () => ipcRenderer.invoke('agent-runtime-status'),
+  agentRuntimeActivate: (installCode: string) => ipcRenderer.invoke('agent-runtime-activate', installCode),
 
-  // Hermes local gateway chat transport. Events are emitted as sanitized protocol payloads.
-  hermesChatConnect: () => ipcRenderer.invoke('hermes-chat-connect'),
-  hermesChatCreateSession: () => ipcRenderer.invoke('hermes-chat-session-create'),
-  hermesChatCommands: () => ipcRenderer.invoke('hermes-chat-commands'),
-  hermesChatSend: (text: string) => ipcRenderer.invoke('hermes-chat-send', text),
-  hermesChatRespond: (type: 'approval' | 'secret' | 'sudo' | 'clarify', value: string, requestId?: string, sessionId?: string) =>
-    ipcRenderer.invoke('hermes-chat-respond', type, value, requestId, sessionId),
-  hermesChatDisconnect: () => ipcRenderer.invoke('hermes-chat-disconnect'),
-  onHermesChatEvent: (callback: (event: any, data: any) => void) => {
-    ipcRenderer.send('hermes-chat-listen');
-    return ipcRenderer.on('hermes-chat-event', callback);
+  // Assistant chat transport. Events are the runtime's protocol payloads.
+  agentChatConnect: () => ipcRenderer.invoke('agent-chat-connect'),
+  agentChatCreateSession: () => ipcRenderer.invoke('agent-chat-session-create'),
+  agentChatSend: (text: string) => ipcRenderer.invoke('agent-chat-send', text),
+  agentChatRespond: (type: 'approval' | 'clarify', value: string, requestId?: string, sessionId?: string) =>
+    ipcRenderer.invoke('agent-chat-respond', type, value, requestId, sessionId),
+  agentChatDisconnect: () => ipcRenderer.invoke('agent-chat-disconnect'),
+  onAgentChatEvent: (callback: (event: any, data: any) => void) => {
+    ipcRenderer.send('agent-chat-listen');
+    return ipcRenderer.on('agent-chat-event', callback);
   },
 
   // Event listeners

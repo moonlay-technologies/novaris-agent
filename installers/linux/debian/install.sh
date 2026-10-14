@@ -28,8 +28,6 @@ if [ -z "$NODE_PATH" ]; then
 fi
 echo "Using Node.js at $NODE_PATH"
 
-"$SCRIPT_DIR/../../install-hermes.sh"
-
 # Create installation directory. The log directory has to exist up front:
 # systemd fails a unit outright when an append: target directory is missing.
 echo "Creating installation directory..."
@@ -59,7 +57,6 @@ if [ ! -f "$CONFIG_FILE" ]; then
   "apiUrl": "http://localhost:3000/api/v1",
   "apiKey": "",
   "assetTag": "",
-  "collectInterval": 300,
   "reportInterval": 300,
   "retryAttempts": 3,
   "retryDelay": 1000,

@@ -8,14 +8,13 @@ import { AgentConfig, DEFAULT_CONFIG } from '../dist/types/config';
 import { createLogger } from '../dist/utils/logger';
 import { DeviceInfoCollector } from '../dist/collectors/deviceInfoCollector';
 import { HealthMetricsCollector } from '../dist/collectors/healthMetricsCollector';
-import { HermesBootstrapService } from '../dist/services/hermesBootstrapService';
-import { HermesRuntimePolicy } from './hermes/runtimePolicy';
-import { HermesProcessSupervisor } from './hermes/processSupervisor';
-import { HermesHeartbeatService } from './hermes/heartbeatService';
-import { HermesCapabilityService } from './hermes/capabilityService';
+import { AgentRuntimeManager } from './agentRuntime/agentRuntimeManager';
+import { AgentRuntimeSupervisor } from './agentRuntime/supervisor';
+import { AgentChatResponseType, AgentChatService } from './agentRuntime/chatService';
+import { InstallTokenStore } from './agentRuntime/installTokenStore';
+import { UserSessionService } from './userSession/userSessionService';
 import { ProcessRegistryService } from '../dist/services/processRegistryService';
-import { HermesGatewayPlatform, HermesGatewayService } from './hermes/gatewayService';
-import { HermesChatService } from './hermes/chatService';
+import { YaraPluginService } from '../dist/services/yaraPluginService';
 import { AutoStartService } from './startup/autoStartService';
 import { BackgroundServiceDetector, BackgroundServiceStatus } from './startup/backgroundServiceDetector';
 
@@ -35,11 +34,34 @@ let tray: Tray | null = null;
 let agentService: AgentService | null = null;
 let isAgentRunning = false;
 let isQuitting = false;
-let hermesSupervisor: HermesProcessSupervisor | null = null;
-let hermesHeartbeat: HermesHeartbeatService | null = null;
-let hermesCapability: HermesCapabilityService | null = null;
-const hermesGatewayService = new HermesGatewayService();
-const hermesChatService = new HermesChatService();
+// The local AI assistant (LangChain Deep Agents runtime, bundled under resources/agent-runtime).
+const agentRuntimeDir = path.join(app.getPath('userData'), 'agent-runtime');
+const agentRuntime = new AgentRuntimeManager({
+  runtimeDir: agentRuntimeDir,
+  supervisor: new AgentRuntimeSupervisor({
+    resourcesPath: process.resourcesPath,
+    runtimeDir: agentRuntimeDir,
+    isPackaged: app.isPackaged,
+    devRuntimeDir: path.join(__dirname, '..', 'runtime'),
+  }),
+});
+const agentChatService = new AgentChatService(() => agentRuntime.endpoint());
+// The Novaris user signed in on this device. Their JWT stays in the main process.
+const userSession = new UserSessionService(
+  new InstallTokenStore(path.join(app.getPath('userData'), 'user-session', 'session.bin')),
+  () => {
+    try {
+      return loadConfig().apiUrl;
+    } catch {
+      return undefined;
+    }
+  }
+);
+userSession.onChange((status) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('user-session-changed', status);
+  }
+});
 const processRegistry = new ProcessRegistryService(initialConfig.logFile);
 processRegistry.registerDefaults(initialConfig);
 const autoStartService = new AutoStartService();
@@ -689,6 +711,18 @@ function startAgentOnLaunch(): void {
   });
 }
 
+/** The most useful message from a failed backend call, for showing to the user. */
+function backendErrorMessage(error: any, fallback: string): string {
+  if (!error.response) {
+    return error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.code === 'ECONNABORTED'
+      ? 'Unable to reach the Novaris backend. Check your connection and the backend API URL in Settings.'
+      : error.message || fallback;
+  }
+  const data = error.response.data;
+  const details = Array.isArray(data?.errors) ? data.errors.map((d: any) => d?.message).filter(Boolean).join('; ') : '';
+  return details || data?.error?.message || data?.error || data?.message || fallback;
+}
+
 // IPC handlers
 ipcMain.handle('get-agent-status', async () => {
   // Refreshed here so a window opened later reflects the service accurately
@@ -736,108 +770,75 @@ ipcMain.handle('download-and-install-update', async () => {
   }
 });
 
-ipcMain.handle('hermes-bootstrap', async (_event, installCode: string) => {
+ipcMain.handle('agent-runtime-status', () => agentRuntime.status());
+
+ipcMain.handle('agent-runtime-activate', async (_event, installCode: string) => {
   try {
     const config = loadConfig();
     if (!config.apiUrl) {
-      throw new Error('apiUrl must be configured before running the Hermes bootstrap flow');
+      throw new Error('apiUrl must be configured before activating the assistant');
     }
     if (!config.deviceId) {
       throw new Error('This device has not been registered yet (missing deviceId)');
     }
-
-    const hermesBootstrapService = new HermesBootstrapService();
-    const result = await hermesBootstrapService.bootstrap({
-      apiUrl: config.apiUrl,
-      installCode,
-      deviceId: config.deviceId,
-    });
-
-    if (result.skipManagedInstall) {
-      logger.info('Hermes managed installation skipped: existing local Hermes installation detected', {
-        installId: result.payload.installId,
-      });
-      await hermesSupervisor?.stop();
-      hermesHeartbeat?.stop();
-    } else {
-      const policy = HermesRuntimePolicy.fromBootstrap(result.payload);
-      hermesSupervisor = new HermesProcessSupervisor({
-        resourcesPath: process.resourcesPath,
-        userDataPath: app.getPath('userData'),
-        isPackaged: app.isPackaged,
-      });
-      const runtimeResult = hermesSupervisor.start(policy);
-      if (!runtimeResult.started) {
-        logger.warn('Hermes bootstrap completed but managed runtime did not start', runtimeResult);
-      }
-
-      hermesHeartbeat = new HermesHeartbeatService();
-      hermesHeartbeat.start(config.apiUrl, config.apiKey, policy);
-      hermesCapability = new HermesCapabilityService();
-      hermesCapability.start(policy, hermesSupervisor);
+    if (typeof installCode !== 'string' || !installCode.trim()) {
+      throw new Error('Enter the install code from your administrator');
     }
 
-    return {
-      success: true,
-      skipManagedInstall: result.skipManagedInstall,
-      payload: result.payload,
-    };
+    agentChatService.disconnect();
+    const status = await agentRuntime.activate(config.apiUrl, config.deviceId, installCode);
+    return { success: true, status };
   } catch (error: any) {
-    logger.error('Hermes bootstrap failed', { error });
+    logger.error('Agent activation failed', { error: error.message });
     return {
       success: false,
-      skipManagedInstall: false,
-      payload: null,
-      message: error.response?.data?.message || error.message || 'Hermes bootstrap failed',
+      status: agentRuntime.status(),
+      message: error.response?.data?.error || error.response?.data?.message || error.message || 'Activation failed',
     };
   }
 });
 
-ipcMain.handle('hermes-gateway-get-config', () => {
+ipcMain.handle('user-session-status', () => userSession.status());
+
+ipcMain.handle('user-login', async (_event, email: string, password: string) => {
   try {
-    return { success: true, config: hermesGatewayService.getConfig() };
+    if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
+      throw new Error('Enter your email and password');
+    }
+    return { success: true, status: await userSession.login(email.trim(), password) };
   } catch (error: any) {
-    logger.error('Failed to read Hermes gateway configuration', { error });
-    return { success: false, config: { platforms: {} }, message: error.message || 'Failed to read gateway configuration' };
+    // Never log the password; the backend message is safe to show.
+    logger.warn('User sign-in failed', { status: error.response?.status, message: error.message });
+    return { success: false, status: userSession.status(), message: backendErrorMessage(error, 'Sign-in failed') };
   }
 });
 
-ipcMain.handle('hermes-gateway-save-config', async (_event, config) => {
+ipcMain.handle('user-logout', () => userSession.logout());
+
+ipcMain.handle('user-change-password', async (_event, currentPassword: string, newPassword: string, confirmation: string) => {
   try {
-    return await hermesGatewayService.saveConfig(config);
+    return { success: true, status: await userSession.changePassword(currentPassword, newPassword, confirmation) };
   } catch (error: any) {
-    logger.error('Failed to save Hermes gateway configuration', { error });
-    return { success: false, configured: [], hermesHome: '', message: error.message || 'Failed to save gateway configuration' };
+    return { success: false, status: userSession.status(), message: backendErrorMessage(error, 'Password change failed') };
   }
 });
 
-ipcMain.handle('hermes-gateway-status', async () => hermesGatewayService.status());
-ipcMain.handle('hermes-gateway-start', async () => hermesGatewayService.start());
-ipcMain.handle('hermes-gateway-stop', async () => hermesGatewayService.stop());
-ipcMain.handle('hermes-gateway-restart', async () => hermesGatewayService.restart());
-ipcMain.handle('hermes-pairing-list', async () => hermesGatewayService.pairingList());
-ipcMain.handle('hermes-pairing-pending', async () => hermesGatewayService.pairingPending());
-ipcMain.handle('hermes-pairing-approve', async (_event, platform: HermesGatewayPlatform, code: string) => (
-  hermesGatewayService.approvePairing(platform, code)
-));
-ipcMain.handle('hermes-pairing-revoke', async (_event, platform: HermesGatewayPlatform, userId: string) => (
-  hermesGatewayService.revokePairing(platform, userId)
-));
-
-ipcMain.handle('hermes-chat-connect', async (_event, port?: number, token?: string) => {
+ipcMain.handle('agent-chat-connect', async () => {
   try {
-    return await hermesChatService.connect(port || 8642, token);
+    return await agentChatService.connect();
   } catch (error: any) {
-    return { success: false, message: error.message || 'Failed to connect to Hermes gateway' };
+    return { success: false, message: error.message || 'Failed to connect to the assistant' };
   }
 });
-ipcMain.handle('hermes-chat-session-create', async () => hermesChatService.createSession());
-ipcMain.handle('hermes-chat-send', async (_event, text: string) => hermesChatService.sendMessage(text));
-ipcMain.handle('hermes-chat-respond', async (_event, type: 'approval' | 'secret' | 'sudo' | 'clarify', value: string, requestId?: string, sessionId?: string) =>
-  hermesChatService.respondToRequest(type, value, requestId, sessionId));
-ipcMain.handle('hermes-chat-disconnect', () => hermesChatService.disconnect());
-ipcMain.on('hermes-chat-listen', (event) => {
-  hermesChatService.setEventListener((chatEvent) => event.sender.send('hermes-chat-event', chatEvent));
+ipcMain.handle('agent-chat-session-create', async () => agentChatService.createSession());
+ipcMain.handle('agent-chat-send', async (_event, text: string) => agentChatService.sendMessage(text));
+ipcMain.handle('agent-chat-respond', async (_event, type: AgentChatResponseType, value: string, requestId?: string, sessionId?: string) =>
+  agentChatService.respondToRequest(type, value, requestId, sessionId));
+ipcMain.handle('agent-chat-disconnect', () => agentChatService.disconnect());
+ipcMain.on('agent-chat-listen', (event) => {
+  agentChatService.setEventListener((chatEvent) => {
+    if (!event.sender.isDestroyed()) event.sender.send('agent-chat-event', chatEvent);
+  });
 });
 
 ipcMain.handle('start-agent', async () => {
@@ -892,6 +893,33 @@ ipcMain.handle('save-config', async (event, newConfig: Partial<AgentConfig>) => 
     return { success: true };
   } catch (error: any) {
     logger.error('Failed to save configuration', { error });
+    return { success: false, error: error.message };
+  }
+});
+
+const yaraPluginService = new YaraPluginService();
+
+ipcMain.handle('yara-plugin-status', () => yaraPluginService.status());
+
+ipcMain.handle('yara-plugin-install', async () => {
+  try {
+    return { success: true, status: await yaraPluginService.install() };
+  } catch (error: any) {
+    logger.error('Failed to install YARA plugin', { error });
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('yara-plugin-uninstall', async () => {
+  try {
+    const status = await yaraPluginService.uninstall();
+    // Nothing left to scan with, so stop scheduling scans
+    if (!status.installed) {
+      saveConfig({ collectYaraScan: false });
+    }
+    return { success: true, status };
+  } catch (error: any) {
+    logger.error('Failed to remove YARA plugin', { error });
     return { success: false, error: error.message };
   }
 });
@@ -1022,6 +1050,8 @@ if (!hasSingleInstanceLock) {
     createWindow({ startHidden: launchedInBackground });
     setupAutoStart();
     startAgentOnLaunch();
+    agentRuntime.restore().catch((error) => logger.error('Failed to restore the assistant', { error: error.message }));
+    userSession.restore();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
@@ -1041,18 +1071,16 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async (event) => {
   isQuitting = true;
 
-  hermesHeartbeat?.stop();
-  hermesGatewayService.dispose();
-  hermesChatService.dispose();
-  
+  agentChatService.dispose();
+
   // Stop agent before quitting
   if (isAgentRunning && agentService) {
     event.preventDefault();
     await stopAgent();
-    await hermesSupervisor?.stop();
+    await agentRuntime.stop();
     app.quit();
   } else {
-    await hermesSupervisor?.stop();
+    await agentRuntime.stop();
   }
 });
 
