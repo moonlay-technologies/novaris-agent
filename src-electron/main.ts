@@ -39,7 +39,8 @@ const userSession = new UserSessionService(
   new EncryptedFileStore(path.join(app.getPath('userData'), 'user-session', 'session.bin')),
   () => {
     try {
-      return loadConfig().apiUrl;
+      // Signing in only needs the backend URL, not a complete agent configuration.
+      return readConfig().apiUrl;
     } catch {
       return undefined;
     }
