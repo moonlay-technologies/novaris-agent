@@ -11,7 +11,7 @@ import { HealthMetricsCollector } from '../dist/collectors/healthMetricsCollecto
 import { AgentRuntimeManager } from './agentRuntime/agentRuntimeManager';
 import { AgentRuntimeSupervisor } from './agentRuntime/supervisor';
 import { AgentChatResponseType, AgentChatService } from './agentRuntime/chatService';
-import { InstallTokenStore } from './agentRuntime/installTokenStore';
+import { EncryptedFileStore } from './userSession/encryptedFileStore';
 import { UserSessionService } from './userSession/userSessionService';
 import { ProcessRegistryService } from '../dist/services/processRegistryService';
 import { YaraPluginService } from '../dist/services/yaraPluginService';
@@ -34,7 +34,19 @@ let tray: Tray | null = null;
 let agentService: AgentService | null = null;
 let isAgentRunning = false;
 let isQuitting = false;
+// The Novaris user signed in on this device. Their JWT stays in the main process.
+const userSession = new UserSessionService(
+  new EncryptedFileStore(path.join(app.getPath('userData'), 'user-session', 'session.bin')),
+  () => {
+    try {
+      return loadConfig().apiUrl;
+    } catch {
+      return undefined;
+    }
+  }
+);
 // The local AI assistant (LangChain Deep Agents runtime, bundled under resources/agent-runtime).
+// It runs as the signed-in user, so signing out or switching user stops it.
 const agentRuntimeDir = path.join(app.getPath('userData'), 'agent-runtime');
 const agentRuntime = new AgentRuntimeManager({
   runtimeDir: agentRuntimeDir,
@@ -44,22 +56,21 @@ const agentRuntime = new AgentRuntimeManager({
     isPackaged: app.isPackaged,
     devRuntimeDir: path.join(__dirname, '..', 'runtime'),
   }),
+  userSession,
 });
 const agentChatService = new AgentChatService(() => agentRuntime.endpoint());
-// The Novaris user signed in on this device. Their JWT stays in the main process.
-const userSession = new UserSessionService(
-  new InstallTokenStore(path.join(app.getPath('userData'), 'user-session', 'session.bin')),
-  () => {
-    try {
-      return loadConfig().apiUrl;
-    } catch {
-      return undefined;
-    }
-  }
-);
+let assistantUserId: number | null = null;
 userSession.onChange((status) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('user-session-changed', status);
+  }
+  const userId = status.user?.id ?? null;
+  if (userId !== assistantUserId) {
+    assistantUserId = userId;
+    agentChatService.disconnect();
+    agentRuntime.reset().catch((error) => logger.error('Failed to stop the assistant', { error: error.message }));
+  } else {
+    agentRuntime.refreshAccessToken().catch((error) => logger.warn('Failed to update the assistant token', { error: error.message }));
   }
 });
 const processRegistry = new ProcessRegistryService(initialConfig.logFile);
@@ -772,31 +783,6 @@ ipcMain.handle('download-and-install-update', async () => {
 
 ipcMain.handle('agent-runtime-status', () => agentRuntime.status());
 
-ipcMain.handle('agent-runtime-activate', async (_event, installCode: string) => {
-  try {
-    const config = loadConfig();
-    if (!config.apiUrl) {
-      throw new Error('apiUrl must be configured before activating the assistant');
-    }
-    if (!config.deviceId) {
-      throw new Error('This device has not been registered yet (missing deviceId)');
-    }
-    if (typeof installCode !== 'string' || !installCode.trim()) {
-      throw new Error('Enter the install code from your administrator');
-    }
-
-    agentChatService.disconnect();
-    const status = await agentRuntime.activate(config.apiUrl, config.deviceId, installCode);
-    return { success: true, status };
-  } catch (error: any) {
-    logger.error('Agent activation failed', { error: error.message });
-    return {
-      success: false,
-      status: agentRuntime.status(),
-      message: error.response?.data?.error || error.response?.data?.message || error.message || 'Activation failed',
-    };
-  }
-});
 
 ipcMain.handle('user-session-status', () => userSession.status());
 
@@ -831,7 +817,12 @@ ipcMain.handle('agent-chat-connect', async () => {
   }
 });
 ipcMain.handle('agent-chat-session-create', async () => agentChatService.createSession());
-ipcMain.handle('agent-chat-send', async (_event, text: string) => agentChatService.sendMessage(text));
+ipcMain.handle('agent-chat-send', async (_event, text: string) => {
+  // Refreshes the JWT when it is close to expiry so a long chat never runs on a stale token.
+  await agentRuntime.refreshAccessToken().catch((error) =>
+    logger.warn('Failed to refresh the assistant token', { error: error.message }));
+  return agentChatService.sendMessage(text);
+});
 ipcMain.handle('agent-chat-respond', async (_event, type: AgentChatResponseType, value: string, requestId?: string, sessionId?: string) =>
   agentChatService.respondToRequest(type, value, requestId, sessionId));
 ipcMain.handle('agent-chat-disconnect', () => agentChatService.disconnect());
@@ -1050,7 +1041,6 @@ if (!hasSingleInstanceLock) {
     createWindow({ startHidden: launchedInBackground });
     setupAutoStart();
     startAgentOnLaunch();
-    agentRuntime.restore().catch((error) => logger.error('Failed to restore the assistant', { error: error.message }));
     userSession.restore();
 
     app.on('activate', () => {

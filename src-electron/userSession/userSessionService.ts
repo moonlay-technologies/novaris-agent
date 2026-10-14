@@ -1,6 +1,6 @@
 import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { getLogger } from '../../dist/utils/logger';
-import { InstallTokenStore } from '../agentRuntime/installTokenStore';
+import { EncryptedFileStore } from './encryptedFileStore';
 
 /** The signed-in Novaris user, as much of it as the renderer may see. */
 export interface SessionUser {
@@ -48,12 +48,16 @@ export class UserSessionService {
   private logger = getLogger();
 
   constructor(
-    private readonly store: InstallTokenStore,
+    private readonly store: EncryptedFileStore,
     private readonly getApiUrl: () => string | undefined
   ) {}
 
   onChange(listener: (status: UserSessionStatus) => void): void {
     this.listeners.push(listener);
+  }
+
+  isSignedIn(): boolean {
+    return this.session !== null;
   }
 
   status(): UserSessionStatus {

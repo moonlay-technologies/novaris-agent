@@ -33,7 +33,8 @@ def build_model(config: RuntimeConfig) -> BaseChatModel:
     model = ChatOpenAI(
         model=config.model,
         base_url=config.proxy_base_url,
-        api_key=config.install_token,
+        # Read on every request so a refreshed JWT is used without restarting the runtime.
+        api_key=config.access_token.get,
         # The backend proxy only implements Chat Completions.
         use_responses_api=False,
         streaming=True,
@@ -86,7 +87,7 @@ def build_agent(
 
     tools: list[Any] = [ask_user]
     if policy.web_search and config.web_search_url:
-        tools.append(make_web_search_tool(config.web_search_url, config.install_token))
+        tools.append(make_web_search_tool(config.web_search_url, config.access_token))
 
     # Replaces the built-in FilesystemMiddleware by name so only the policy's tools are exposed. The
     # general-purpose subagent inherits this replacement, so it gets the same restricted toolset.

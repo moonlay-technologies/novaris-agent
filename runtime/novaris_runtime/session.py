@@ -207,9 +207,9 @@ def _preview_args(args: dict[str, Any], limit: int = 2000) -> dict[str, Any]:
 def user_facing_error(error: Exception) -> str:
     status = getattr(error, "status_code", None)
     if status == 401:
-        return "This device is not authorized to use the AI service. Ask an administrator to re-issue the install."
+        return "Your session is no longer valid. Sign in again on the Account page."
     if status == 403:
-        return "This device's install is not assigned to a user, so AI requests are blocked."
+        return "Your account is not allowed to use the AI service. Contact your administrator."
     if status == 429:
         return "Today's AI usage limit has been reached. It resets at midnight."
     if status is not None and status >= 500:

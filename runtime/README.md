@@ -7,7 +7,7 @@ loopback WebSocket. It replaced the Hermes Agent runtime.
 ```
 Electron UI ─IPC─> AgentChatService ─ws://127.0.0.1:<port>/api/ws?token=…─> novaris-runtime
                                                                            └─ create_deep_agent
-                                                                              ├─ model: backend /api/v1/proxy (install token)
+                                                                              ├─ model: backend /api/v1/proxy (user JWT)    
                                                                               ├─ files: workspace folder (virtual_mode, writes need approval)
                                                                               ├─ web_search: backend /api/v1/agent-tools/web-search
                                                                               ├─ memory: <data>/memories/AGENTS.md
@@ -15,7 +15,9 @@ Electron UI ─IPC─> AgentChatService ─ws://127.0.0.1:<port>/api/ws?token=�
 ```
 
 No provider API keys ever reach the device: model calls and web search go through the backend, which
-authenticates the install token and bills usage to the install's user.
+authenticates the signed-in user's JWT and bills usage to that user. Electron fetches the policy from
+`GET /api/v1/me/assistant`, passes the JWT as `NOVARIS_ACCESS_TOKEN`, and writes
+`{"type": "access_token", "token": "..."}` lines to stdin whenever it refreshes the session.
 
 ## Development
 
@@ -47,7 +49,7 @@ Environment set by the supervisor:
 | Variable | Meaning |
 |---|---|
 | `NOVARIS_POLICY_FILE` | JSON policy written by Electron (`LockedAgentPolicy`). |
-| `NOVARIS_INSTALL_TOKEN` | Install token; authenticates to the backend. Never written to the policy file. |
+| `NOVARIS_ACCESS_TOKEN` | Signed-in user's JWT; authenticates to the backend. Never written to the policy file. Replaced via stdin on refresh. |
 | `NOVARIS_RUNTIME_TOKEN` | Random per-launch secret the WebSocket client must present. |
 | `NOVARIS_DATA_DIR` | Chat history, memory and approval grants. |
 | `NOVARIS_RUNTIME_PORT` | `0` picks a free port. |

@@ -1,14 +1,11 @@
-import * as fs from 'fs';
 import * as path from 'path';
-import { AgentBootstrapPayload } from '../../dist/types/agentRuntime';
+import { AssistantPolicyPayload } from '../../dist/types/agentRuntime';
 
 /**
- * The validated policy the local runtime is started with. Written to disk so
- * the runtime can be restarted after the app restarts; the install token is
- * deliberately not part of it (see InstallTokenStore).
+ * The validated policy the local runtime is started with. The user's JWT is
+ * deliberately not part of it; the supervisor passes it separately.
  */
 export interface LockedAgentPolicy {
-  installId: number;
   backendBaseUrl: string;
   proxyEndpointUrl: string;
   webSearchEndpointUrl: string | null;
@@ -22,7 +19,7 @@ export interface LockedAgentPolicy {
 
 /** Builds and validates the local policy used by the managed agent runtime. */
 export class AgentRuntimePolicy {
-  static fromBootstrap(payload: AgentBootstrapPayload): LockedAgentPolicy {
+  static fromPayload(payload: AssistantPolicyPayload): LockedAgentPolicy {
     if (payload.runtime !== 'deepagents') {
       throw new Error(`This app version cannot run the "${payload.runtime}" agent runtime`);
     }
@@ -39,14 +36,13 @@ export class AgentRuntimePolicy {
       : null;
 
     if (!payload.policyVersion || payload.allowedTools.some((tool) => !/^[a-z0-9_-]+$/i.test(tool))) {
-      throw new Error('Agent bootstrap contains an invalid runtime policy');
+      throw new Error('The assistant policy from the backend is invalid');
     }
     if (!/^[\w.:/-]{1,100}$/.test(payload.model)) {
-      throw new Error('Agent bootstrap contains an invalid model name');
+      throw new Error('The assistant policy from the backend has an invalid model name');
     }
 
     return {
-      installId: payload.installId,
       backendBaseUrl: backendUrl.toString().replace(/\/$/, ''),
       proxyEndpointUrl: proxyUrl,
       webSearchEndpointUrl: webSearchUrl,
@@ -57,19 +53,6 @@ export class AgentRuntimePolicy {
       maxInputTokens: payload.maxInputTokens,
       systemPrompt: payload.systemPrompt,
     };
-  }
-
-  static write(policy: LockedAgentPolicy, filePath: string): void {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(policy, null, 2), { encoding: 'utf8', mode: 0o600 });
-  }
-
-  static read(filePath: string): LockedAgentPolicy {
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as LockedAgentPolicy;
-    if (!parsed.installId || !parsed.proxyEndpointUrl || !parsed.policyVersion || !parsed.workspacePath || !parsed.model) {
-      throw new Error('Stored agent runtime policy is incomplete');
-    }
-    return parsed;
   }
 
   private static sameOriginUrl(value: string, backendUrl: URL, label: string): string {

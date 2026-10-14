@@ -139,10 +139,10 @@ second agent.
 
 The desktop app includes a local AI assistant (LangChain Deep Agents) that can
 read, and with approval change, files in the user's `Documents/AssetAssistant`
-folder and search the web. An administrator issues a one-time install code
-(`POST /api/v1/agent-installs`); the user enters it under **Novaris Assistant**
-to activate the assistant on that device. AI traffic goes through the backend
-proxy, so no provider keys are stored on the device. See
+folder and search the web. It works as the Novaris user signed in on the
+**Account** page: the app loads the assistant policy from `GET /api/v1/me/assistant`
+and the runtime calls the backend AI proxy with that user's JWT, so usage is
+billed to them and no provider keys are stored on the device. See
 [runtime/README.md](runtime/README.md) for how it works.
 
 ## Development
