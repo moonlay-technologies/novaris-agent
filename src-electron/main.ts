@@ -11,7 +11,10 @@ import { HealthMetricsCollector } from '../dist/collectors/healthMetricsCollecto
 import { AgentRuntimeManager } from './agentRuntime/agentRuntimeManager';
 import { AgentRuntimeSupervisor } from './agentRuntime/supervisor';
 import { AgentChatResponseType, AgentChatService } from './agentRuntime/chatService';
+import { InstallTokenStore } from './agentRuntime/installTokenStore';
+import { UserSessionService } from './userSession/userSessionService';
 import { ProcessRegistryService } from '../dist/services/processRegistryService';
+import { YaraPluginService } from '../dist/services/yaraPluginService';
 import { AutoStartService } from './startup/autoStartService';
 import { BackgroundServiceDetector, BackgroundServiceStatus } from './startup/backgroundServiceDetector';
 
@@ -43,6 +46,22 @@ const agentRuntime = new AgentRuntimeManager({
   }),
 });
 const agentChatService = new AgentChatService(() => agentRuntime.endpoint());
+// The Novaris user signed in on this device. Their JWT stays in the main process.
+const userSession = new UserSessionService(
+  new InstallTokenStore(path.join(app.getPath('userData'), 'user-session', 'session.bin')),
+  () => {
+    try {
+      return loadConfig().apiUrl;
+    } catch {
+      return undefined;
+    }
+  }
+);
+userSession.onChange((status) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('user-session-changed', status);
+  }
+});
 const processRegistry = new ProcessRegistryService(initialConfig.logFile);
 processRegistry.registerDefaults(initialConfig);
 const autoStartService = new AutoStartService();
@@ -692,6 +711,18 @@ function startAgentOnLaunch(): void {
   });
 }
 
+/** The most useful message from a failed backend call, for showing to the user. */
+function backendErrorMessage(error: any, fallback: string): string {
+  if (!error.response) {
+    return error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.code === 'ECONNABORTED'
+      ? 'Unable to reach the Novaris backend. Check your connection and the backend API URL in Settings.'
+      : error.message || fallback;
+  }
+  const data = error.response.data;
+  const details = Array.isArray(data?.errors) ? data.errors.map((d: any) => d?.message).filter(Boolean).join('; ') : '';
+  return details || data?.error?.message || data?.error || data?.message || fallback;
+}
+
 // IPC handlers
 ipcMain.handle('get-agent-status', async () => {
   // Refreshed here so a window opened later reflects the service accurately
@@ -767,6 +798,31 @@ ipcMain.handle('agent-runtime-activate', async (_event, installCode: string) => 
   }
 });
 
+ipcMain.handle('user-session-status', () => userSession.status());
+
+ipcMain.handle('user-login', async (_event, email: string, password: string) => {
+  try {
+    if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
+      throw new Error('Enter your email and password');
+    }
+    return { success: true, status: await userSession.login(email.trim(), password) };
+  } catch (error: any) {
+    // Never log the password; the backend message is safe to show.
+    logger.warn('User sign-in failed', { status: error.response?.status, message: error.message });
+    return { success: false, status: userSession.status(), message: backendErrorMessage(error, 'Sign-in failed') };
+  }
+});
+
+ipcMain.handle('user-logout', () => userSession.logout());
+
+ipcMain.handle('user-change-password', async (_event, currentPassword: string, newPassword: string, confirmation: string) => {
+  try {
+    return { success: true, status: await userSession.changePassword(currentPassword, newPassword, confirmation) };
+  } catch (error: any) {
+    return { success: false, status: userSession.status(), message: backendErrorMessage(error, 'Password change failed') };
+  }
+});
+
 ipcMain.handle('agent-chat-connect', async () => {
   try {
     return await agentChatService.connect();
@@ -837,6 +893,33 @@ ipcMain.handle('save-config', async (event, newConfig: Partial<AgentConfig>) => 
     return { success: true };
   } catch (error: any) {
     logger.error('Failed to save configuration', { error });
+    return { success: false, error: error.message };
+  }
+});
+
+const yaraPluginService = new YaraPluginService();
+
+ipcMain.handle('yara-plugin-status', () => yaraPluginService.status());
+
+ipcMain.handle('yara-plugin-install', async () => {
+  try {
+    return { success: true, status: await yaraPluginService.install() };
+  } catch (error: any) {
+    logger.error('Failed to install YARA plugin', { error });
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('yara-plugin-uninstall', async () => {
+  try {
+    const status = await yaraPluginService.uninstall();
+    // Nothing left to scan with, so stop scheduling scans
+    if (!status.installed) {
+      saveConfig({ collectYaraScan: false });
+    }
+    return { success: true, status };
+  } catch (error: any) {
+    logger.error('Failed to remove YARA plugin', { error });
     return { success: false, error: error.message };
   }
 });
@@ -968,6 +1051,7 @@ if (!hasSingleInstanceLock) {
     setupAutoStart();
     startAgentOnLaunch();
     agentRuntime.restore().catch((error) => logger.error('Failed to restore the assistant', { error: error.message }));
+    userSession.restore();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

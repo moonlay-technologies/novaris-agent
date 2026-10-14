@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { AgentConfig, DEFAULT_CONFIG } from '../types/config';
+import { AgentConfig, DEFAULT_CONFIG, ResponseActionsMode, Severity } from '../types/config';
 
 // Get the installation directory (where the executable is located)
 // For packaged apps, this is the installation folder
@@ -71,6 +71,69 @@ export function validateConfig(config: Partial<AgentConfig>): ConfigValidationRe
   };
 }
 
+const SEVERITIES: ReadonlyArray<Severity> = ['info', 'warning', 'error', 'critical'];
+const RESPONSE_ACTIONS_MODES: ReadonlyArray<ResponseActionsMode> = ['off', 'acknowledge', 'execute'];
+
+const parseBoolean = (raw: string): boolean => ['1', 'true', 'yes'].includes(raw.trim().toLowerCase());
+
+/** Keys replaced in 1.1: the agent no longer reads them. */
+const LEGACY_KEYS = [
+  'collectInterval',
+  'softwareCollectionInterval',
+  'securityEventsMinSeverity',
+  'pollResponseActions',
+  'remoteActionsEnabled',
+  'responseActionsDryRun',
+] as const;
+
+type LegacyConfig = Partial<AgentConfig> & {
+  collectInterval?: number;
+  softwareCollectionInterval?: number;
+  securityEventsMinSeverity?: Severity;
+  pollResponseActions?: boolean;
+  remoteActionsEnabled?: boolean;
+  responseActionsDryRun?: boolean;
+};
+
+/** The single response-actions mode equivalent to the three switches it replaces. */
+function responseActionsModeFrom(poll?: boolean, remoteEnabled?: boolean, dryRun?: boolean): ResponseActionsMode {
+  if (poll === false) return 'off';
+  // Remote actions were off by default and dry-run was on by default; either one held execution back.
+  return remoteEnabled === true && dryRun === false ? 'execute' : 'acknowledge';
+}
+
+/**
+ * Converts settings written by earlier versions into their replacements and drops
+ * the replaced keys. Returns null when there was nothing to convert.
+ */
+export function migrateLegacyConfig(config: LegacyConfig): Partial<AgentConfig> | null {
+  if (!LEGACY_KEYS.some((key) => key in config)) {
+    return null;
+  }
+
+  const migrated: LegacyConfig = { ...config };
+
+  if (migrated.responseActionsMode === undefined
+    && (config.pollResponseActions !== undefined || config.remoteActionsEnabled !== undefined || config.responseActionsDryRun !== undefined)) {
+    migrated.responseActionsMode = responseActionsModeFrom(
+      config.pollResponseActions,
+      config.remoteActionsEnabled,
+      config.responseActionsDryRun,
+    );
+  }
+
+  if (migrated.softwareInterval === undefined && typeof config.softwareCollectionInterval === 'number') {
+    // Was counted in report cycles
+    const reportInterval = config.reportInterval ?? (DEFAULT_CONFIG.reportInterval as number);
+    migrated.softwareInterval = config.softwareCollectionInterval * reportInterval;
+  }
+
+  for (const key of LEGACY_KEYS) {
+    delete migrated[key];
+  }
+  return migrated;
+}
+
 export function loadConfig(): AgentConfig {
   // Create default config file if it doesn't exist
   if (!fs.existsSync(ENV_CONFIG_FILE)) {
@@ -99,6 +162,16 @@ export function loadConfig(): AgentConfig {
     } catch (error) {
       console.error(`Failed to parse config file: ${ENV_CONFIG_FILE}`, error);
     }
+
+    const migrated = migrateLegacyConfig(fileConfig);
+    if (migrated) {
+      fileConfig = migrated;
+      try {
+        fs.writeFileSync(ENV_CONFIG_FILE, JSON.stringify(fileConfig, null, 2), 'utf-8');
+      } catch (error) {
+        console.error(`Failed to rewrite migrated config file: ${ENV_CONFIG_FILE}`, error);
+      }
+    }
   }
 
   // Then, load from environment variables (only if they're actually set)
@@ -117,9 +190,6 @@ export function loadConfig(): AgentConfig {
   }
   if (process.env.NOVARIS_ASSET_TAG) {
     envConfig.assetTag = process.env.NOVARIS_ASSET_TAG;
-  }
-  if (process.env.NOVARIS_COLLECT_INTERVAL) {
-    envConfig.collectInterval = parseInt(process.env.NOVARIS_COLLECT_INTERVAL, 10);
   }
   if (process.env.NOVARIS_REPORT_INTERVAL) {
     envConfig.reportInterval = parseInt(process.env.NOVARIS_REPORT_INTERVAL, 10);
@@ -164,8 +234,8 @@ export function loadConfig(): AgentConfig {
   }
   if (process.env.NOVARIS_LOGS_MIN_SEVERITY) {
     const raw = process.env.NOVARIS_LOGS_MIN_SEVERITY.trim().toLowerCase();
-    if (raw === 'info' || raw === 'warning' || raw === 'error' || raw === 'critical') {
-      envConfig.logsMinSeverity = raw as AgentConfig['logsMinSeverity'];
+    if (SEVERITIES.includes(raw as Severity)) {
+      envConfig.logsMinSeverity = raw as Severity;
     }
   }
   if (process.env.NOVARIS_LOGS_INCLUDE_RAW) {
@@ -175,12 +245,6 @@ export function loadConfig(): AgentConfig {
   if (process.env.NOVARIS_COLLECT_SECURITY_EVENTS) {
     const raw = process.env.NOVARIS_COLLECT_SECURITY_EVENTS.trim().toLowerCase();
     envConfig.collectSecurityEvents = raw === '1' || raw === 'true' || raw === 'yes';
-  }
-  if (process.env.NOVARIS_SECURITY_EVENTS_MIN_SEVERITY) {
-    const raw = process.env.NOVARIS_SECURITY_EVENTS_MIN_SEVERITY.trim().toLowerCase();
-    if (raw === 'info' || raw === 'warning' || raw === 'error' || raw === 'critical') {
-      envConfig.securityEventsMinSeverity = raw as AgentConfig['securityEventsMinSeverity'];
-    }
   }
   if (process.env.NOVARIS_COLLECT_PROCESSES) {
     const raw = process.env.NOVARIS_COLLECT_PROCESSES.trim().toLowerCase();
@@ -248,23 +312,33 @@ export function loadConfig(): AgentConfig {
   if (process.env.NOVARIS_ZEEK_LOGS_INTERVAL) {
     envConfig.zeekLogsInterval = parseInt(process.env.NOVARIS_ZEEK_LOGS_INTERVAL, 10);
   }
-  if (process.env.NOVARIS_POLL_RESPONSE_ACTIONS) {
-    const raw = process.env.NOVARIS_POLL_RESPONSE_ACTIONS.trim().toLowerCase();
-    envConfig.pollResponseActions = raw === '1' || raw === 'true' || raw === 'yes';
+  if (process.env.NOVARIS_SOFTWARE_INTERVAL) {
+    envConfig.softwareInterval = parseInt(process.env.NOVARIS_SOFTWARE_INTERVAL, 10);
+  }
+  if (process.env.NOVARIS_RESPONSE_ACTIONS_MODE) {
+    const raw = process.env.NOVARIS_RESPONSE_ACTIONS_MODE.trim().toLowerCase() as ResponseActionsMode;
+    if (RESPONSE_ACTIONS_MODES.includes(raw)) {
+      envConfig.responseActionsMode = raw;
+    }
+  } else if (
+    process.env.NOVARIS_POLL_RESPONSE_ACTIONS
+    || process.env.NOVARIS_REMOTE_ACTIONS_ENABLED
+    || process.env.NOVARIS_RESPONSE_ACTIONS_DRY_RUN
+  ) {
+    // Deprecated switches, still honoured for existing deployments
+    const env = (name: string): boolean | undefined =>
+      process.env[name] ? parseBoolean(process.env[name] as string) : undefined;
+    envConfig.responseActionsMode = responseActionsModeFrom(
+      env('NOVARIS_POLL_RESPONSE_ACTIONS'),
+      env('NOVARIS_REMOTE_ACTIONS_ENABLED'),
+      env('NOVARIS_RESPONSE_ACTIONS_DRY_RUN'),
+    );
   }
   if (process.env.NOVARIS_RESPONSE_ACTIONS_INTERVAL) {
     envConfig.responseActionsInterval = parseInt(process.env.NOVARIS_RESPONSE_ACTIONS_INTERVAL, 10);
   }
   if (process.env.NOVARIS_RESPONSE_ACTION_TIMEOUT) {
     envConfig.responseActionTimeout = parseInt(process.env.NOVARIS_RESPONSE_ACTION_TIMEOUT, 10);
-  }
-  if (process.env.NOVARIS_REMOTE_ACTIONS_ENABLED) {
-    const raw = process.env.NOVARIS_REMOTE_ACTIONS_ENABLED.trim().toLowerCase();
-    envConfig.remoteActionsEnabled = raw === '1' || raw === 'true' || raw === 'yes';
-  }
-  if (process.env.NOVARIS_RESPONSE_ACTIONS_DRY_RUN) {
-    const raw = process.env.NOVARIS_RESPONSE_ACTIONS_DRY_RUN.trim().toLowerCase();
-    envConfig.responseActionsDryRun = raw === '1' || raw === 'true' || raw === 'yes';
   }
   if (process.env.NOVARIS_LOG_LEVEL) {
     envConfig.logLevel = process.env.NOVARIS_LOG_LEVEL as AgentConfig['logLevel'];

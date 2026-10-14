@@ -44,49 +44,63 @@ npm start
 
 ### Agent Configuration
 
-Create a `config.json` file in the agent directory:
+Configure the agent in the desktop app under **Settings**. Pick the agent mode first:
+
+- **Endpoint** monitors this device only.
+- **Network Gateway** also monitors the local network (syslog, SNMP, device discovery, Zeek).
+  The *Network monitoring* settings only appear, and only run, in this mode.
+
+Settings are grouped into Connection, Device inventory, Security, Network monitoring,
+Remote actions and Application. The YARA malware scan needs the yara-x scanner: use
+**Install** on the *Malware scan* card to download it (checksum-verified) into
+`plugins/yara/` next to `config.json`.
+
+Settings are stored in `config.json` in the install directory, so headless installs can
+still provide one:
 
 ```json
 {
   "apiUrl": "http://localhost:3000/api/v1",
   "apiKey": "your-api-key-here",
   "assetTag": "ASSET-001",
-  "collectInterval": 300,
+  "agentMode": "endpoint",
   "reportInterval": 300,
-  "retryAttempts": 3,
-  "retryDelay": 1000,
-  "collectSecurityPosture": true,
-  "securityPostureInterval": 21600,
-  "collectSecurityEvents": true,
-  "securityEventsMinSeverity": "warning",
-  "pollResponseActions": true,
-  "responseActionsInterval": 60,
-  "responseActionTimeout": 30,
-  "remoteActionsEnabled": false,
-  "responseActionsDryRun": true,
-  "logLevel": "info",
-  "autoStart": true
+  "softwareInterval": 3600,
+  "logsMinSeverity": "warning",
+  "responseActionsMode": "acknowledge",
+  "logLevel": "info"
 }
 ```
 
-Or use environment variables:
+`responseActionsMode` is `off` (don't poll), `acknowledge` (receive actions without
+running them) or `execute`. Files written by earlier versions are migrated
+automatically on load: `pollResponseActions`, `remoteActionsEnabled` and
+`responseActionsDryRun` become `responseActionsMode`, `softwareCollectionInterval`
+(report cycles) becomes `softwareInterval` (seconds), and `collectInterval` and
+`securityEventsMinSeverity` are dropped.
+
+Environment variables override the file:
 
 - `NOVARIS_API_URL` - Backend API URL
 - `NOVARIS_API_KEY` - API key for authentication (get from backend admin)
-- `NOVARIS_COLLECT_INTERVAL` - Collection interval in seconds (default: 300)
-- `NOVARIS_REPORT_INTERVAL` - Reporting interval in seconds (default: 300)
+- `NOVARIS_ASSET_TAG` - Asset tag identifying this device
+- `NOVARIS_AGENT_MODE` - `endpoint` or `network_gateway`
+- `NOVARIS_REPORT_INTERVAL` - Health reporting interval in seconds (default: 300)
+- `NOVARIS_SOFTWARE_INTERVAL` - Software inventory interval in seconds (default: 3600)
 - `NOVARIS_COLLECT_SECURITY_POSTURE` - Enable posture collection (true/false)
 - `NOVARIS_SECURITY_POSTURE_INTERVAL` - Posture reporting interval in seconds
-- `NOVARIS_COLLECT_SECURITY_EVENTS` - Enable normalized security events (true/false)
-- `NOVARIS_SECURITY_EVENTS_MIN_SEVERITY` - Minimum event severity (info, warning, error, critical)
-- `NOVARIS_POLL_RESPONSE_ACTIONS` - Poll pending response actions (true/false)
+- `NOVARIS_COLLECT_SECURITY_EVENTS` - Detect security events in collected logs (true/false)
+- `NOVARIS_LOGS_MIN_SEVERITY` - Minimum severity for logs and security events (info, warning, error, critical)
+- `NOVARIS_RESPONSE_ACTIONS_MODE` - `off`, `acknowledge` or `execute` (default: acknowledge)
 - `NOVARIS_RESPONSE_ACTIONS_INTERVAL` - Response action poll interval in seconds
 - `NOVARIS_RESPONSE_ACTION_TIMEOUT` - Response action command timeout in seconds
-- `NOVARIS_REMOTE_ACTIONS_ENABLED` - Enable real endpoint actions (defaults to false)
-- `NOVARIS_RESPONSE_ACTIONS_DRY_RUN` - Acknowledge actions without execution when true
 - `NOVARIS_AUTO_START` - Launch the application at login and run in the background (true/false)
 - `NOVARIS_LOG_LEVEL` - Log level (error, warn, info, debug)
 - `NOVARIS_INSTALL_DIR` - Override the directory holding `config.json` and `logs/`
+
+The deprecated `NOVARIS_POLL_RESPONSE_ACTIONS`, `NOVARIS_REMOTE_ACTIONS_ENABLED` and
+`NOVARIS_RESPONSE_ACTIONS_DRY_RUN` are still honoured when
+`NOVARIS_RESPONSE_ACTIONS_MODE` is not set.
 
 ### Background Operation
 

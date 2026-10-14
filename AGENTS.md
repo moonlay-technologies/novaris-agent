@@ -194,7 +194,6 @@ logger.debug('Collecting device info', { platform: 'windows' });
 export interface AgentConfig {
   apiUrl: string;
   apiKey: string;
-  collectInterval: number;
   reportInterval: number;
   retryAttempts: number;
   retryDelay: number;
@@ -211,7 +210,7 @@ export interface AgentConfig {
 - Device info: Collect once or when changed (doesn't change frequently)
 - Health metrics: Collect at regular intervals (changes frequently)
 - Software list: Collect periodically (changes infrequently)
-- Respect `collectInterval` from configuration
+- Respect the configured `*Interval` settings
 
 ### Error Handling in Collectors
 - Never throw errors that would crash the agent

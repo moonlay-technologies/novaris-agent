@@ -57,7 +57,6 @@ if [ ! -f "$CONFIG_FILE" ]; then
   "apiUrl": "http://localhost:3000/api/v1",
   "apiKey": "",
   "assetTag": "",
-  "collectInterval": 300,
   "reportInterval": 300,
   "retryAttempts": 3,
   "retryDelay": 1000,

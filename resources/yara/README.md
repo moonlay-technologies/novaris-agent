@@ -22,3 +22,5 @@ node scripts/fetch-yara.js win32   # or fetch a specific platform explicitly
 We use **yara-x** (VirusTotal's actively-maintained Rust reimplementation of YARA, BSD-3-Clause) rather than classic YARA - classic YARA only publishes prebuilt binaries for Windows; macOS requires Homebrew and Linux requires compiling from source. yara-x ships genuine portable archives for Windows, macOS (Intel + Apple Silicon), and Linux (x64 + ARM) on every release.
 
 These binaries are gitignored - they're third-party executables, not source, and shouldn't bloat the repo history. `package.json`'s `build.mac/win/linux.extraResources` points electron-builder at these folders, so `npm run dist` bundles whatever's here into the packaged app automatically.
+
+You can also install it from the desktop app: **Settings > Security > Malware scan > Install** downloads the same pinned release, verifies its SHA256 against the digest pinned in `src/services/yaraPluginService.ts`, and places it in `plugins/yara/<platform>/` next to `config.json`, which is checked before the paths above.

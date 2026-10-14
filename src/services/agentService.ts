@@ -52,7 +52,6 @@ export class AgentService {
   private syslogCollectorService: SyslogCollectorService;
   private zeekLogTailService: ZeekLogTailService;
   private logger = getLogger();
-  private collectInterval: NodeJS.Timeout | null = null;
   private reportInterval: NodeJS.Timeout | null = null;
   private patchStatusInterval: NodeJS.Timeout | null = null;
   private securityPostureInterval: NodeJS.Timeout | null = null;
@@ -68,7 +67,7 @@ export class AgentService {
   private lastPatchStatusAt: Date | null = null;
   private lastPatchStatus: PatchStatusReport | null = null;
   private lastLogsCursorAt: Date | null = null;
-  private softwareCollectionIteration: number = 0;
+  private lastSoftwareCollectedAt: number | null = null;
   private lastSoftwareList: DeviceReport['softwareList'] | undefined = undefined;
   private lastSoftwareRiskAssessment: SoftwareRiskAssessment | null = null;
   private readonly processRegistry: ProcessRegistryService;
@@ -118,18 +117,21 @@ export class AgentService {
         await this.registerOrFindDevice();
       }
 
-      // Start collecting and reporting
-      this.startCollection();
+      // Start reporting (device info is collected with the first report)
       this.startReporting();
       this.startPatchStatusReporting();
       this.startSecurityPostureReporting();
       this.startLogsReporting();
       this.startProcessReporting();
       this.startYaraScanReporting();
-      this.startSyslogCollector();
-      this.startSnmpReporting();
-      this.startActiveDiscoveryReporting();
-      this.startZeekLogTailing();
+      if (this.config.agentMode === 'network_gateway') {
+        this.startSyslogCollector();
+        this.startSnmpReporting();
+        this.startActiveDiscoveryReporting();
+        this.startZeekLogTailing();
+      } else {
+        this.logger.info('Endpoint mode: network monitoring disabled');
+      }
       this.startResponseActionsPolling();
       this.startQueueProcessing();
 
@@ -150,11 +152,6 @@ export class AgentService {
     this.logger.info('Stopping Novaris Agent...');
     this.processRegistry.start('agent.shutdown');
     this.isRunning = false;
-
-    if (this.collectInterval) {
-      clearInterval(this.collectInterval);
-      this.collectInterval = null;
-    }
 
     if (this.reportInterval) {
       clearInterval(this.reportInterval);
@@ -269,22 +266,6 @@ export class AgentService {
       this.logger.error('Device lookup/registration failed', { error });
       throw error;
     }
-  }
-
-  private startCollection(): void {
-    this.logger.info(`Starting data collection (interval: ${this.config.collectInterval}s)`);
-    
-    // Collect immediately
-    this.collectData().catch((error) => {
-      this.logger.error('Initial data collection failed', { error });
-    });
-
-    // Then collect at intervals
-    this.collectInterval = setInterval(() => {
-      this.collectData().catch((error) => {
-        this.logger.error('Data collection failed', { error });
-      });
-    }, this.config.collectInterval * 1000);
   }
 
   private startReporting(): void {
@@ -563,8 +544,8 @@ export class AgentService {
   }
 
   private startResponseActionsPolling(): void {
-    if (!this.config.pollResponseActions) {
-      this.logger.info('Response actions polling disabled (pollResponseActions=false)');
+    if (this.config.responseActionsMode === 'off') {
+      this.logger.info('Response actions polling disabled (responseActionsMode=off)');
       return;
     }
 
@@ -609,28 +590,6 @@ export class AgentService {
     }
   }
 
-  private async collectData(): Promise<void> {
-    this.processRegistry.start('device.collection');
-    try {
-      this.logger.debug('Collecting device data...');
-
-      // Collect device info (only if not already collected or if changed)
-      if (!this.lastDeviceInfo) {
-        this.lastDeviceInfo = await this.deviceInfoCollector.collect();
-      }
-
-      // Note: Device info doesn't change frequently, so we don't need to collect it every time
-      // Software list also doesn't change frequently
-    } catch (error) {
-      this.processRegistry.fail('device.collection', error);
-      this.logger.error('Failed to collect device data', { error });
-      throw error;
-    }
-    finally {
-      this.processRegistry.complete('device.collection');
-    }
-  }
-
   private async reportData(): Promise<void> {
     if (!this.config.deviceId) {
       this.logger.warn('Device not registered yet, skipping report');
@@ -647,23 +606,21 @@ export class AgentService {
       let softwareList: DeviceReport['softwareList'] | undefined = this.lastSoftwareList;
       let connectedDevices: DeviceReport['connectedDevices'] | undefined = undefined;
 
-      // Increment software collection iteration counter
-      this.softwareCollectionIteration++;
-
-      // Collect software on first iteration or every N iterations to reduce frequency (configurable)
+      // Software changes rarely: collect it on the first report, then once per softwareInterval
+      const now = Date.now();
       const shouldCollectSoftware = this.config.collectSoftware && (
-        this.softwareCollectionIteration === 1 || // First collection
-        this.softwareCollectionIteration % this.config.softwareCollectionInterval === 0
+        this.lastSoftwareCollectedAt === null
+        || now - this.lastSoftwareCollectedAt >= this.config.softwareInterval * 1000
       );
 
       if (shouldCollectSoftware) {
-        this.logger.info(`Collecting software data (iteration: ${this.softwareCollectionIteration})`);
+        this.logger.info('Collecting software data');
         softwareList = await this.softwareCollector.collect();
+        this.lastSoftwareCollectedAt = now;
         this.lastSoftwareList = softwareList; // Cache the collected software list
         this.lastSoftwareRiskAssessment = this.softwareRiskCollector.collect(softwareList || []);
       } else if (this.config.collectSoftware && this.lastSoftwareList !== undefined) {
-        const nextCollection = Math.ceil(this.softwareCollectionIteration / this.config.softwareCollectionInterval) * this.config.softwareCollectionInterval;
-        this.logger.debug(`Using cached software data (iteration: ${this.softwareCollectionIteration}, ${softwareList?.length || 0} items, next collection at iteration ${nextCollection})`);
+        this.logger.debug(`Using cached software data (${softwareList?.length || 0} items)`);
       }
 
       if (this.config.collectConnectedDevices) {
@@ -913,7 +870,7 @@ export class AgentService {
       }
     };
 
-    const minRank = rank(this.config.securityEventsMinSeverity);
+    const minRank = rank(this.config.logsMinSeverity);
     return events.filter((event) => rank(event.severity) >= minRank);
   }
 

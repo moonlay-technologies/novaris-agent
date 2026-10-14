@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   saveConfig: (config: unknown) => ipcRenderer.invoke('save-config', config),
 
+  // YARA scanner plugin
+  yaraPluginStatus: () => ipcRenderer.invoke('yara-plugin-status'),
+  yaraPluginInstall: () => ipcRenderer.invoke('yara-plugin-install'),
+  yaraPluginUninstall: () => ipcRenderer.invoke('yara-plugin-uninstall'),
+
   // System info
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
 
@@ -30,6 +35,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File operations
   openConfig: () => ipcRenderer.invoke('open-config'),
   openLogs: () => ipcRenderer.invoke('open-logs'),
+
+  // Novaris user session. The JWT stays in the main process; only the profile reaches the renderer.
+  userSessionStatus: () => ipcRenderer.invoke('user-session-status'),
+  userLogin: (email: string, password: string) => ipcRenderer.invoke('user-login', email, password),
+  userLogout: () => ipcRenderer.invoke('user-logout'),
+  userChangePassword: (currentPassword: string, newPassword: string, confirmation: string) =>
+    ipcRenderer.invoke('user-change-password', currentPassword, newPassword, confirmation),
+  onUserSessionChanged: (callback: (event: any, data: any) => void) =>
+    ipcRenderer.on('user-session-changed', callback),
 
   // Local AI assistant. The install token and runtime port/token never reach the renderer.
   agentRuntimeStatus: () => ipcRenderer.invoke('agent-runtime-status'),

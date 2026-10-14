@@ -12,7 +12,6 @@ async function main() {
 
     logger.info('Novaris Agent starting...');
     logger.info(`API URL: ${config.apiUrl}`);
-    logger.info(`Collect Interval: ${config.collectInterval}s`);
     logger.info(`Report Interval: ${config.reportInterval}s`);
 
     // Create and start agent service
