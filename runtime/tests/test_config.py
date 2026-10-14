@@ -8,7 +8,7 @@ from novaris_runtime.config import ConfigError, load_config
 def env(policy_path, **extra):
     return {
         "NOVARIS_POLICY_FILE": str(policy_path),
-        "NOVARIS_INSTALL_TOKEN": "install-token",
+        "NOVARIS_ACCESS_TOKEN": "user-jwt",
         "NOVARIS_RUNTIME_TOKEN": "t" * 40,
         "NOVARIS_DATA_DIR": "/tmp/novaris",
         **extra,
@@ -18,7 +18,7 @@ def env(policy_path, **extra):
 def test_loads_policy_and_derives_proxy_base(write_policy):
     config = load_config(env(write_policy()))
 
-    assert config.install_id == 7
+    assert config.access_token.get() == "user-jwt"
     assert config.proxy_base_url == "https://novaris.example.com/api/v1/proxy"
     assert config.web_search_url == "https://novaris.example.com/api/v1/agent-tools/web-search"
     assert config.model == "gpt-4o-mini"
@@ -44,9 +44,9 @@ def test_requires_a_strong_runtime_token(write_policy):
         load_config(env(write_policy(), NOVARIS_RUNTIME_TOKEN="short"))
 
 
-def test_requires_an_install_token(write_policy):
-    with pytest.raises(ConfigError, match="install token"):
-        load_config(env(write_policy(), NOVARIS_INSTALL_TOKEN=""))
+def test_requires_an_access_token(write_policy):
+    with pytest.raises(ConfigError, match="NOVARIS_ACCESS_TOKEN"):
+        load_config(env(write_policy(), NOVARIS_ACCESS_TOKEN=""))
 
 
 def test_falls_back_to_defaults_for_older_policies(write_policy):

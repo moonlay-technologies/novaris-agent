@@ -192,7 +192,7 @@ async def test_model_errors_become_error_events(make_harness):
 
 @pytest.mark.parametrize(
     ("status", "fragment"),
-    [(401, "not authorized"), (403, "not assigned"), (429, "usage limit"), (502, "unavailable")],
+    [(401, "Sign in again"), (403, "not allowed"), (429, "usage limit"), (502, "unavailable")],
 )
 def test_user_facing_errors(status, fragment):
     error = Exception("x")

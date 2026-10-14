@@ -45,9 +45,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onUserSessionChanged: (callback: (event: any, data: any) => void) =>
     ipcRenderer.on('user-session-changed', callback),
 
-  // Local AI assistant. The install token and runtime port/token never reach the renderer.
+  // Local AI assistant. The user's JWT and the runtime port/token never reach the renderer.
   agentRuntimeStatus: () => ipcRenderer.invoke('agent-runtime-status'),
-  agentRuntimeActivate: (installCode: string) => ipcRenderer.invoke('agent-runtime-activate', installCode),
 
   // Assistant chat transport. Events are the runtime's protocol payloads.
   agentChatConnect: () => ipcRenderer.invoke('agent-chat-connect'),

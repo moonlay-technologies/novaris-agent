@@ -7,13 +7,15 @@ import logging
 import httpx
 from langchain_core.tools import BaseTool, tool
 
+from .config import AccessToken
+
 logger = logging.getLogger(__name__)
 
 WEB_SEARCH_TIMEOUT_SECONDS = 20.0
 ASK_USER_TOOL = "ask_user"
 
 
-def make_web_search_tool(endpoint_url: str, install_token: str) -> BaseTool:
+def make_web_search_tool(endpoint_url: str, access_token: AccessToken) -> BaseTool:
     @tool
     async def web_search(query: str, max_results: int = 5) -> str:
         """Search the web. Returns titles, URLs and short excerpts of the top results."""
@@ -23,7 +25,7 @@ def make_web_search_tool(endpoint_url: str, install_token: str) -> BaseTool:
                 response = await client.post(
                     endpoint_url,
                     json={"query": query, "max_results": max_results},
-                    headers={"Authorization": f"Bearer {install_token}"},
+                    headers={"Authorization": f"Bearer {access_token.get()}"},
                 )
             response.raise_for_status()
             results = response.json().get("data", {}).get("results", [])

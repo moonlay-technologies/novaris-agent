@@ -3,6 +3,8 @@
 Electron starts this process with the environment documented in `config.py`, waits
 for the `NOVARIS_RUNTIME_READY {"port": N}` line on stdout, then connects over
 WebSocket. The process exits when stdin closes, so it never outlives Electron.
+Electron also writes `{"type": "access_token", "token": "..."}` lines to stdin when it
+refreshes the signed-in user's session.
 """
 
 from __future__ import annotations
@@ -15,6 +17,10 @@ import signal
 import sys
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .config import AccessToken
 
 READY_PREFIX = "NOVARIS_RUNTIME_READY"
 
@@ -42,13 +48,20 @@ def configure_frozen_environment() -> None:
         os.environ.setdefault("TIKTOKEN_CACHE_DIR", str(Path(bundle_dir) / "tiktoken_cache"))
 
 
-def watch_stdin(loop: asyncio.AbstractEventLoop, stop: asyncio.Event) -> None:
-    """Stops the runtime when the parent process closes our stdin (or dies)."""
+def watch_stdin(loop: asyncio.AbstractEventLoop, stop: asyncio.Event, access_token: AccessToken) -> None:
+    """Applies access token updates from the parent; stops the runtime when it closes our stdin (or dies)."""
+    logger = logging.getLogger("novaris_runtime")
 
     def wait() -> None:
         try:
-            while sys.stdin.buffer.read(1024):
-                pass
+            for line in sys.stdin.buffer:
+                try:
+                    message = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(message, dict) and message.get("type") == "access_token" and message.get("token"):
+                    access_token.set(str(message["token"]))
+                    logger.info("Access token updated")
         except (OSError, ValueError):
             pass
         loop.call_soon_threadsafe(stop.set)
@@ -81,7 +94,7 @@ async def run() -> int:
             loop.add_signal_handler(sig, stop.set)
         except (NotImplementedError, RuntimeError):
             signal.signal(sig, lambda *_: loop.call_soon_threadsafe(stop.set))
-    watch_stdin(loop, stop)
+    watch_stdin(loop, stop, config.access_token)
 
     status = {"runtime": "deepagents", "model": config.model, "policy_version": config.policy_version}
     server = RuntimeServer(config.runtime_token, status)
