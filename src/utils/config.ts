@@ -274,6 +274,12 @@ export function readConfig(): AgentConfig {
   if (process.env.NOVARIS_PROCESS_INTERVAL) {
     envConfig.processInterval = parseInt(process.env.NOVARIS_PROCESS_INTERVAL, 10);
   }
+  if (process.env.NOVARIS_COLLECT_EVIDENCE) {
+    envConfig.collectEvidence = parseBoolean(process.env.NOVARIS_COLLECT_EVIDENCE);
+  }
+  if (process.env.NOVARIS_EVIDENCE_INTERVAL) {
+    envConfig.evidenceInterval = parseInt(process.env.NOVARIS_EVIDENCE_INTERVAL, 10);
+  }
   if (process.env.NOVARIS_COLLECT_YARA_SCAN) {
     const raw = process.env.NOVARIS_COLLECT_YARA_SCAN.trim().toLowerCase();
     envConfig.collectYaraScan = raw === '1' || raw === 'true' || raw === 'yes';

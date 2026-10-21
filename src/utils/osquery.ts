@@ -31,6 +31,8 @@ function resolveBinaryPath(): string | null {
     candidates.push(path.join(resourcesPath, 'osquery', platformDir, binaryName));
   }
   candidates.push(path.join(process.cwd(), 'resources', 'osquery', platformDir, binaryName));
+  // The background service runs compiled dist/ under plain Node; the package root sits above it
+  candidates.push(path.join(__dirname, '..', '..', 'resources', 'osquery', platformDir, binaryName));
 
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) {
@@ -60,6 +62,77 @@ export function isOsqueryAvailable(): boolean {
   return getBinaryPath() !== null;
 }
 
+/** Outcome of an osquery query, keeping "unavailable" and "failed" apart from "no rows". */
+export type OsqueryResult<T> =
+  | { ok: true; rows: T[] }
+  | { ok: false; reason: 'tool_unavailable' | 'timeout' | 'command_failed' | 'parse_error'; error: string };
+
+/** Read access to osquery, as evidence packs see it (replaceable in tests). */
+export interface OsqueryClient {
+  available(): boolean;
+  version(): Promise<string | null>;
+  query<T = Record<string, string>>(sql: string): Promise<OsqueryResult<T>>;
+}
+
+/**
+ * Run a single SQL query against the bundled osqueryi binary. Never throws.
+ */
+export async function runOsquery<T = Record<string, string>>(sql: string): Promise<OsqueryResult<T>> {
+  const binaryPath = getBinaryPath();
+  if (!binaryPath) {
+    return { ok: false, reason: 'tool_unavailable', error: 'osquery binary not bundled' };
+  }
+
+  let stdout: string;
+  try {
+    const result = await execFileAsync(binaryPath, ['--json', sql], {
+      timeout: 30000,
+      maxBuffer: 5 * 1024 * 1024,
+      windowsHide: true,
+    });
+    stdout = String(result.stdout || '').trim();
+  } catch (error: any) {
+    const reason = error?.killed ? 'timeout' : 'command_failed';
+    return { ok: false, reason, error: String(error?.message || error).split(/\r?\n/)[0].slice(0, 200) };
+  }
+
+  if (!stdout) {
+    return { ok: true, rows: [] };
+  }
+  try {
+    const parsed = JSON.parse(stdout);
+    return { ok: true, rows: Array.isArray(parsed) ? (parsed as T[]) : [] };
+  } catch {
+    return { ok: false, reason: 'parse_error', error: 'osquery output was not valid JSON' };
+  }
+}
+
+let cachedVersion: string | null | undefined;
+
+async function osqueryVersion(): Promise<string | null> {
+  if (cachedVersion !== undefined) return cachedVersion;
+  const binaryPath = getBinaryPath();
+  if (!binaryPath) {
+    cachedVersion = null;
+    return cachedVersion;
+  }
+  try {
+    const { stdout } = await execFileAsync(binaryPath, ['--version'], { timeout: 10000, windowsHide: true });
+    // "osqueryi version 5.23.1"
+    cachedVersion = String(stdout).trim().split(/\s+/).pop() || null;
+  } catch {
+    cachedVersion = null;
+  }
+  return cachedVersion;
+}
+
+/** The OsqueryClient backed by the bundled binary. */
+export const bundledOsquery: OsqueryClient = {
+  available: isOsqueryAvailable,
+  version: osqueryVersion,
+  query: runOsquery,
+};
+
 /**
  * Run a single SQL query against the bundled osqueryi binary and parse its
  * JSON output. Never throws - matches every other collector's convention of
@@ -67,27 +140,15 @@ export function isOsqueryAvailable(): boolean {
  * bad query, timeout, unparseable output).
  */
 export async function queryOsquery<T = Record<string, string>>(sql: string): Promise<T[]> {
+  const result = await runOsquery<T>(sql);
+  if (result.ok) {
+    return result.rows;
+  }
   const logger = getLogger();
-  const binaryPath = getBinaryPath();
-
-  if (!binaryPath) {
+  if (result.reason === 'tool_unavailable') {
     logger.debug('osquery binary not available, skipping query', { sql });
-    return [];
+  } else {
+    logger.warn('osquery query failed', { sql, error: result.error });
   }
-
-  try {
-    const { stdout } = await execFileAsync(binaryPath, ['--json', sql], {
-      timeout: 30000,
-      maxBuffer: 5 * 1024 * 1024,
-    });
-    const raw = (stdout || '').trim();
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as T[]) : [];
-  } catch (error: any) {
-    logger.warn('osquery query failed', { sql, error: error?.message || error });
-    return [];
-  }
+  return [];
 }

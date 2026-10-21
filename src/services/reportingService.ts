@@ -8,6 +8,7 @@ import {
   SecurityEvent,
   SecurityPostureReport,
 } from '../types/device';
+import { EvidenceEnvelope } from '../types/evidence';
 import { AgentConfig } from '../types/config';
 import { getLogger } from '../utils/logger';
 
@@ -20,6 +21,8 @@ export class ReportingService {
   private logsQueue: DeviceLogItem[][] = [];
   private securityEventsQueue: SecurityEvent[][] = [];
   private processesQueue: ProcessData[][] = [];
+  private evidenceQueue: EvidenceEnvelope[] = [];
+  private evidenceUnsupportedLogged = false;
   private isOnline: boolean = true;
   private nextOnlineCheckAt: number | null = null;
 
@@ -606,7 +609,6 @@ export class ReportingService {
             pid: p.pid !== null ? p.pid : undefined,
             cpu_usage: p.cpuUsage,
             ram_usage: p.ramUsage,
-            command: p.command !== null ? p.command.substring(0, 2000) : undefined,
           })),
         };
         await this.apiClient.post(`/devices/${deviceId}/processes`, payload);
@@ -642,6 +644,61 @@ export class ReportingService {
     if (lastError) {
       this.logger.debug('Last processes error', { error: lastError.message });
     }
+  }
+
+  /**
+   * Sends compliance evidence. Network failures queue the envelope (only the
+   * newest one is kept: evidence describes current state, older envelopes add nothing).
+   * A server that does not know the endpoint yet (404) is logged once and skipped.
+   */
+  async reportEvidence(deviceId: number, envelope: EvidenceEnvelope): Promise<void> {
+    if (!this.shouldAttemptOnline()) {
+      this.logger.warn('Device is offline, queuing compliance evidence');
+      this.evidenceQueue = [envelope];
+      return;
+    }
+
+    const maxRetries = this.config.retryAttempts;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        await this.apiClient.post(`/devices/${deviceId}/evidence`, envelope);
+        this.markOnline();
+        this.logger.debug('Compliance evidence sent successfully', { categories: envelope.categories.length });
+        return;
+      } catch (error: any) {
+        const status = error.response?.status;
+        const isNetworkError = !error.response || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT';
+
+        if (isNetworkError) {
+          this.markOffline('compliance evidence report failed');
+          this.evidenceQueue = [envelope];
+          return;
+        }
+        if (status === 404) {
+          if (!this.evidenceUnsupportedLogged) {
+            this.logger.warn('Backend does not accept compliance evidence yet (404 on /evidence); skipping until it does');
+            this.evidenceUnsupportedLogged = true;
+          }
+          return;
+        }
+        if (status === 400 || status === 422) {
+          // A schema mismatch will not fix itself on retry
+          this.logger.error('Compliance evidence rejected by the backend', { status, response: error.response?.data });
+          return;
+        }
+
+        this.logger.error(`Compliance evidence report failed (attempt ${attempt + 1}/${maxRetries})`, {
+          status,
+          message: error.response?.data?.error || error.message,
+        });
+        if (attempt < maxRetries - 1) {
+          await this.sleep(this.getBackoffDelay(attempt));
+        }
+      }
+    }
+
+    this.logger.warn('Failed to send compliance evidence after all retries, queuing for later');
+    this.evidenceQueue = [envelope];
   }
 
   private async syncSoftwareList(deviceId: number, softwareList: DeviceReport['softwareList']): Promise<void> {
@@ -705,7 +762,8 @@ export class ReportingService {
         !this.securityPostureQueue.length &&
         !this.logsQueue.length &&
         !this.securityEventsQueue.length &&
-        !this.processesQueue.length) ||
+        !this.processesQueue.length &&
+        !this.evidenceQueue.length) ||
       !this.config.deviceId
     ) {
       return;
@@ -774,6 +832,12 @@ export class ReportingService {
         this.logger.error('Failed to process queued processes', { error });
         this.processesQueue.push(batch);
       }
+    }
+
+    const evidence = [...this.evidenceQueue];
+    this.evidenceQueue = [];
+    for (const envelope of evidence) {
+      await this.reportEvidence(this.config.deviceId!, envelope);
     }
 
     const securityEventBatches = [...this.securityEventsQueue];

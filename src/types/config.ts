@@ -42,6 +42,9 @@ export interface AgentConfig {
   };
   collectProcesses: boolean;
   processInterval: number; // in seconds
+  /** Compliance evidence (POST /devices/:id/evidence), grouped by category. */
+  collectEvidence: boolean;
+  evidenceInterval: number; // in seconds
   collectYaraScan: boolean;
   yaraScanInterval: number; // in seconds
   yaraScanPaths?: string[]; // overrides the platform-default scan directories when set
@@ -99,9 +102,13 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   logsMinSeverity: 'warning',
   logsIncludeRaw: false,
   collectSecurityEvents: true,
-  collectProcesses: true,
+  // Process snapshots and scheduled YARA scans are investigation tools, not compliance
+  // evidence: off by default (both stay available on demand through response actions).
+  collectProcesses: false,
   processInterval: 60, // 1 minute
-  collectYaraScan: true,
+  collectEvidence: true,
+  evidenceInterval: 21600, // 6 hours
+  collectYaraScan: false,
   yaraScanInterval: 86400, // 24 hours - a real content scan is far more expensive than the other periodic checks
   yaraScanMaxFiles: 500,
   yaraScanMaxFileSizeBytes: 25 * 1024 * 1024, // 25MB

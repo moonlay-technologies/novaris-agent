@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import { createHash } from 'crypto';
 import { AgentConfig } from '../types/config';
@@ -28,8 +29,24 @@ import { ZeekLogTailService } from './zeekLogTailService';
 import { getLogger } from '../utils/logger';
 import { saveConfig } from '../utils/config';
 import { ProcessRegistryService } from './processRegistryService';
+import { EvidenceCollector } from '../evidence/evidenceCollector';
+import { EvidenceHealthTracker } from '../evidence/evidenceHealthTracker';
+import { EvidenceContext } from '../evidence/evidencePack';
+import { currentPlatform } from '../evidence/evidenceItem';
+import { configHash, detectElevated, detectRunMode } from '../evidence/runtimeInfo';
+import { createEvidencePacks } from '../evidence/packs';
+import { ExecFileCommandRunner } from '../utils/commandRunner';
+import { bundledOsquery } from '../utils/osquery';
 
 const YARA_RULES_DIR = path.join(__dirname, '../rules/yara');
+
+function readAgentVersion(): string {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json'), 'utf-8')).version || 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
 
 export class AgentService {
   private static readonly PATCH_DETAILS_MAX_CHARS = 6000;
@@ -60,6 +77,9 @@ export class AgentService {
   private yaraScanInterval: NodeJS.Timeout | null = null;
   private snmpInterval: NodeJS.Timeout | null = null;
   private activeDiscoveryInterval: NodeJS.Timeout | null = null;
+  private evidenceInterval: NodeJS.Timeout | null = null;
+  private evidenceCollector: EvidenceCollector | null = null;
+  private evidenceContext: EvidenceContext | null = null;
   private queueInterval: NodeJS.Timeout | null = null;
   private responseActionsInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
@@ -123,6 +143,7 @@ export class AgentService {
       this.startSecurityPostureReporting();
       this.startLogsReporting();
       this.startProcessReporting();
+      this.startEvidenceReporting();
       this.startYaraScanReporting();
       if (this.config.agentMode === 'network_gateway') {
         this.startSyslogCollector();
@@ -176,6 +197,11 @@ export class AgentService {
     if (this.processInterval) {
       clearInterval(this.processInterval);
       this.processInterval = null;
+    }
+
+    if (this.evidenceInterval) {
+      clearInterval(this.evidenceInterval);
+      this.evidenceInterval = null;
     }
 
     if (this.yaraScanInterval) {
@@ -553,6 +579,72 @@ export class AgentService {
         this.logger.error('Process report failed', { error });
       });
     }, this.config.processInterval * 1000);
+  }
+
+  private startEvidenceReporting(): void {
+    if (!this.config.collectEvidence) {
+      this.logger.info('Compliance evidence collection disabled (collectEvidence=false)');
+      return;
+    }
+
+    const platform = currentPlatform();
+    if (!platform) {
+      this.logger.warn('Compliance evidence is not supported on this platform', { platform: process.platform });
+      return;
+    }
+
+    this.logger.info(`Starting compliance evidence reporting (interval: ${this.config.evidenceInterval}s)`);
+
+    this.reportEvidence().catch((error) => {
+      this.logger.error('Initial compliance evidence report failed', { error });
+    });
+
+    this.evidenceInterval = setInterval(() => {
+      this.reportEvidence().catch((error) => {
+        this.logger.error('Compliance evidence report failed', { error });
+      });
+    }, this.config.evidenceInterval * 1000);
+  }
+
+  private async reportEvidence(): Promise<void> {
+    if (!this.config.deviceId) {
+      this.logger.warn('Device not registered yet, skipping compliance evidence report');
+      return;
+    }
+
+    this.processRegistry.start('evidence.reporting');
+    try {
+      const { collector, context } = await this.getEvidenceRuntime();
+      const envelope = await collector.collect(context);
+      await this.reportingService.reportEvidence(this.config.deviceId, envelope);
+    } catch (error: any) {
+      this.processRegistry.fail('evidence.reporting', error);
+      this.logger.error('Failed to collect/report compliance evidence', { error: error?.message || error });
+    } finally {
+      this.processRegistry.complete('evidence.reporting');
+    }
+  }
+
+  /** Built on first use: detecting elevation runs a command, which the constructor should not. */
+  private async getEvidenceRuntime(): Promise<{ collector: EvidenceCollector; context: EvidenceContext }> {
+    if (!this.evidenceCollector || !this.evidenceContext) {
+      const runner = new ExecFileCommandRunner();
+      this.evidenceContext = {
+        platform: currentPlatform() as NonNullable<ReturnType<typeof currentPlatform>>,
+        runMode: detectRunMode(),
+        elevated: await detectElevated(runner),
+        runner,
+        osquery: bundledOsquery,
+        now: () => new Date(),
+      };
+      this.evidenceCollector = new EvidenceCollector(
+        createEvidencePacks(),
+        new EvidenceHealthTracker(),
+        () => configHash(this.config),
+        readAgentVersion(),
+      );
+    }
+    return { collector: this.evidenceCollector, context: this.evidenceContext };
   }
 
   private startResponseActionsPolling(): void {
