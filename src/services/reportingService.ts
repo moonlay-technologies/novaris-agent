@@ -23,6 +23,7 @@ export class ReportingService {
   private processesQueue: ProcessData[][] = [];
   private evidenceQueue: EvidenceEnvelope[] = [];
   private evidenceUnsupportedLogged = false;
+  private lastSoftwareSyncAt: Date | null = null;
   private isOnline: boolean = true;
   private nextOnlineCheckAt: number | null = null;
 
@@ -719,6 +720,7 @@ export class ReportingService {
           installed_at: software.installedAt?.toISOString(),
         })),
       });
+      this.lastSoftwareSyncAt = new Date();
       this.logger.debug(`Synced ${softwareList.length} software items via bulk sync`);
     } catch (error: any) {
       this.logger.error(`Failed to sync software list`, { 
@@ -854,6 +856,11 @@ export class ReportingService {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /** When the server last accepted the software list, or null if not in this run. */
+  public getLastSoftwareSyncAt(): Date | null {
+    return this.lastSoftwareSyncAt;
   }
 
   public getOnlineStatus(): boolean {

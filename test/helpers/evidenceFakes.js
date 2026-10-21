@@ -11,7 +11,8 @@ class FakeRunner {
   async run(file, args = []) {
     const key = [file, ...args].join(' ');
     this.calls.push(key);
-    const entry = this.outputs[key];
+    // A function registered under the program name answers any arguments (used for PowerShell scripts)
+    const entry = this.outputs[key] ?? (typeof this.outputs[file] === 'function' ? this.outputs[file](args) : undefined);
     if (entry === undefined) {
       return { ok: false, reason: 'tool_unavailable', exitCode: null, stdout: '', stderr: '', error: `${file} not found` };
     }
@@ -53,6 +54,35 @@ class FakeOsquery {
   }
 }
 
+/** In-memory files: { path: { text?, mtime? } }; directories are derived from the paths. */
+class FakeFiles {
+  constructor(files = {}) {
+    this.files = files;
+  }
+
+  async readText(filePath) {
+    return this.files[filePath]?.text ?? null;
+  }
+
+  async modifiedAt(filePath) {
+    const mtime = this.files[filePath]?.mtime;
+    return mtime ? new Date(mtime) : null;
+  }
+
+  async exists(filePath) {
+    return filePath in this.files || Object.keys(this.files).some((p) => p.startsWith(`${filePath}/`));
+  }
+
+  async list(dirPath) {
+    const children = new Set();
+    for (const p of Object.keys(this.files)) {
+      if (!p.startsWith(`${dirPath}/`)) continue;
+      children.add(`${dirPath}/${p.slice(dirPath.length + 1).split('/')[0]}`);
+    }
+    return Array.from(children);
+  }
+}
+
 function context(overrides = {}) {
   return {
     platform: 'windows',
@@ -60,7 +90,9 @@ function context(overrides = {}) {
     elevated: true,
     runner: new FakeRunner(),
     osquery: new FakeOsquery(),
+    files: new FakeFiles(),
     now: () => new Date('2026-10-21T08:00:00Z'),
+    uptimeSeconds: () => 86400,
     ...overrides,
   };
 }
@@ -81,4 +113,4 @@ function findForbiddenKeys(value, path = '$') {
   return found;
 }
 
-module.exports = { FakeRunner, FakeOsquery, context, findForbiddenKeys };
+module.exports = { FakeRunner, FakeOsquery, FakeFiles, context, findForbiddenKeys };

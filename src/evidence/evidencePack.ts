@@ -1,4 +1,5 @@
 import { CommandRunner } from '../utils/commandRunner';
+import { FileReader } from '../utils/fileReader';
 import { OsqueryClient } from '../utils/osquery';
 import { EvidenceItemsByCategory, EvidencePlatform, ImplementedCategoryId, RunMode } from '../types/evidence';
 
@@ -9,7 +10,9 @@ export interface EvidenceContext {
   elevated: boolean;
   runner: CommandRunner;
   osquery: OsqueryClient;
+  files: FileReader;
   now: () => Date;
+  uptimeSeconds: () => number;
 }
 
 /**

@@ -33,10 +33,10 @@ import { EvidenceCollector } from '../evidence/evidenceCollector';
 import { EvidenceHealthTracker } from '../evidence/evidenceHealthTracker';
 import { EvidenceContext } from '../evidence/evidencePack';
 import { currentPlatform } from '../evidence/evidenceItem';
-import { configHash, detectElevated, detectRunMode } from '../evidence/runtimeInfo';
+import { configHash } from '../evidence/runtimeInfo';
 import { createEvidencePacks } from '../evidence/packs';
-import { ExecFileCommandRunner } from '../utils/commandRunner';
-import { bundledOsquery } from '../utils/osquery';
+import { SoftwareSnapshot } from '../evidence/packs/softwarePack';
+import { getDefaultEvidenceContext } from '../evidence/defaultContext';
 
 const YARA_RULES_DIR = path.join(__dirname, '../rules/yara');
 
@@ -79,7 +79,6 @@ export class AgentService {
   private activeDiscoveryInterval: NodeJS.Timeout | null = null;
   private evidenceInterval: NodeJS.Timeout | null = null;
   private evidenceCollector: EvidenceCollector | null = null;
-  private evidenceContext: EvidenceContext | null = null;
   private queueInterval: NodeJS.Timeout | null = null;
   private responseActionsInterval: NodeJS.Timeout | null = null;
   private isRunning: boolean = false;
@@ -625,26 +624,29 @@ export class AgentService {
     }
   }
 
-  /** Built on first use: detecting elevation runs a command, which the constructor should not. */
   private async getEvidenceRuntime(): Promise<{ collector: EvidenceCollector; context: EvidenceContext }> {
-    if (!this.evidenceCollector || !this.evidenceContext) {
-      const runner = new ExecFileCommandRunner();
-      this.evidenceContext = {
-        platform: currentPlatform() as NonNullable<ReturnType<typeof currentPlatform>>,
-        runMode: detectRunMode(),
-        elevated: await detectElevated(runner),
-        runner,
-        osquery: bundledOsquery,
-        now: () => new Date(),
-      };
+    const context = await getDefaultEvidenceContext();
+    if (!context) {
+      throw new Error(`Compliance evidence is not supported on ${process.platform}`);
+    }
+    if (!this.evidenceCollector) {
       this.evidenceCollector = new EvidenceCollector(
-        createEvidencePacks(),
+        createEvidencePacks({ software: () => this.softwareSnapshot() }),
         new EvidenceHealthTracker(),
         () => configHash(this.config),
         readAgentVersion(),
       );
     }
-    return { collector: this.evidenceCollector, context: this.evidenceContext };
+    return { collector: this.evidenceCollector, context };
+  }
+
+  /** Latest software list collected for /software/sync and when the server last accepted it. */
+  private softwareSnapshot(): SoftwareSnapshot {
+    return {
+      enabled: this.config.collectSoftware,
+      items: this.lastSoftwareList ?? null,
+      lastSyncedAt: this.reportingService.getLastSoftwareSyncAt(),
+    };
   }
 
   private startResponseActionsPolling(): void {

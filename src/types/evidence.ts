@@ -94,14 +94,199 @@ export interface AgentItems {
   health: EvidenceItem<AgentHealthValue>;
 }
 
+// --- patch ------------------------------------------------------------------
+
+export type PackageManager = 'wua' | 'apt' | 'dnf' | 'yum' | 'zypper' | 'softwareupdate';
+
+export interface PatchUpdatesValue {
+  pending_total: number;
+  pending_security: number;
+  oldest_pending_security_days: number | null;
+  /** Last SUCCESSFUL query of the update source, not the agent run time. */
+  last_scan_at: string | null;
+  last_installed_at: string | null;
+  package_manager: PackageManager;
+}
+
+export interface PatchRebootValue {
+  reboot_pending: boolean;
+  uptime_seconds: number;
+}
+
+export interface PatchItems {
+  updates: EvidenceItem<PatchUpdatesValue>;
+  reboot: EvidenceItem<PatchRebootValue>;
+}
+
+// --- protection -------------------------------------------------------------
+
+export interface AntimalwareProduct {
+  name: string;
+  /** builtin = OS protection that is not a separate product (macOS XProtect). */
+  kind: 'av' | 'edr' | 'builtin';
+  realtime_enabled: boolean | null;
+  signatures_up_to_date?: boolean | null;
+  signature_age_days?: number | null;
+  tamper_protected?: boolean | null;
+}
+
+export interface AntimalwareValue {
+  products: AntimalwareProduct[];
+  gatekeeper_enabled: boolean | null;
+}
+
+export interface ProtectionItems {
+  antimalware: EvidenceItem<AntimalwareValue>;
+}
+
+// --- encryption -------------------------------------------------------------
+
+export interface SystemVolumeValue {
+  volume: string;
+  encrypted: boolean;
+  method: string | null;
+  protection_on: boolean | null;
+}
+
+export interface OtherVolumesValue {
+  total: number;
+  encrypted: number;
+}
+
+export interface EncryptionItems {
+  system_volume: EvidenceItem<SystemVolumeValue>;
+  other_volumes?: EvidenceItem<OtherVolumesValue>;
+}
+
+// --- access -----------------------------------------------------------------
+
+export interface AdminMember {
+  name: string;
+  type: 'user' | 'group' | 'unknown';
+  scope: 'local' | 'domain' | 'unknown';
+  enabled?: boolean | null;
+}
+
+export interface LocalAdminsValue {
+  members: AdminMember[];
+  count: number;
+}
+
+export interface ScreenLockValue {
+  enabled: boolean;
+  timeout_seconds: number | null;
+  password_on_wake?: boolean | null;
+  scope: 'machine_policy' | 'console_user';
+}
+
+export interface DefaultAccountsValue {
+  guest_enabled: boolean | null;
+  builtin_admin_enabled?: boolean | null;
+}
+
+export interface AccessItems {
+  local_admins: EvidenceItem<LocalAdminsValue>;
+  screen_lock: EvidenceItem<ScreenLockValue>;
+  default_accounts?: EvidenceItem<DefaultAccountsValue>;
+}
+
+// --- exposure ---------------------------------------------------------------
+
+export type FirewallProduct = 'windows_firewall' | 'macos_alf' | 'ufw' | 'firewalld' | 'nftables' | 'iptables' | 'none';
+
+export interface FirewallValue {
+  product: FirewallProduct;
+  profiles: Array<{ name: 'domain' | 'private' | 'public' | 'global'; enabled: boolean }>;
+}
+
+export interface RemoteAccessValue {
+  rdp_enabled?: boolean | null;
+  rdp_nla_required?: boolean | null;
+  ssh_server_enabled?: boolean | null;
+  screen_sharing_enabled?: boolean | null;
+}
+
+export interface ListeningPort {
+  protocol: 'tcp' | 'udp';
+  port: number;
+  bind_scope: 'any' | 'loopback' | 'specific';
+  /** Executable name only, never the command line. */
+  process_name?: string | null;
+}
+
+export interface ExposureItems {
+  firewall: EvidenceItem<FirewallValue>;
+  remote_access?: EvidenceItem<RemoteAccessValue>;
+  listening_ports?: EvidenceItem<{ ports: ListeningPort[] }>;
+}
+
+// --- software ---------------------------------------------------------------
+
+export interface SoftwareInventoryValue {
+  item_count: number;
+  /** sha256 of the sorted "name|version" lines. */
+  inventory_hash: string;
+  last_synced_at: string | null;
+}
+
+export interface SoftwareItems {
+  inventory: EvidenceItem<SoftwareInventoryValue>;
+}
+
+// --- hardening --------------------------------------------------------------
+
+export interface SecureBootValue {
+  supported: boolean | null;
+  enabled: boolean | null;
+}
+
+export interface TpmValue {
+  present: boolean;
+  ready: boolean | null;
+  version?: string | null;
+}
+
+export type BaselineSettings = Record<string, boolean | number | string | null>;
+
+export interface HardeningItems {
+  secure_boot?: EvidenceItem<SecureBootValue>;
+  tpm?: EvidenceItem<TpmValue>;
+  baseline?: EvidenceItem<{ settings: BaselineSettings }>;
+}
+
+// --- audit ------------------------------------------------------------------
+
+export interface AuditCategorySetting {
+  id: string;
+  success: boolean;
+  failure: boolean;
+}
+
+export interface AuditLoggingValue {
+  service: 'windows_eventlog' | 'auditd' | 'journald' | 'macos_unified_log';
+  service_running: boolean;
+  security_log_max_mb?: number | null;
+  categories?: AuditCategorySetting[] | null;
+}
+
+export interface AuditItems {
+  logging?: EvidenceItem<AuditLoggingValue>;
+  time_sync?: EvidenceItem<{ enabled: boolean; service?: string | null }>;
+}
+
 // --- envelope ---------------------------------------------------------------
 
-/**
- * Item maps per category. Categories added in later tasks (patch, protection, ...)
- * extend this map; until then they are simply not sent.
- */
+/** Item map of every category. */
 export interface EvidenceItemsByCategory {
   identity: IdentityItems;
+  patch: PatchItems;
+  protection: ProtectionItems;
+  encryption: EncryptionItems;
+  access: AccessItems;
+  exposure: ExposureItems;
+  software: SoftwareItems;
+  hardening: HardeningItems;
+  audit: AuditItems;
   agent: AgentItems;
 }
 
