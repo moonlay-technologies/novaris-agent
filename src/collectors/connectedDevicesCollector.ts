@@ -15,11 +15,11 @@ export class ConnectedDevicesCollector {
     const items: ConnectedDevice[] = [];
 
     try {
+      // Bluetooth devices and the Wi-Fi network/router are left out on purpose: they are
+      // mostly personal devices and locations (SSID/BSSID), not company asset evidence.
       await this.collectUsb(items);
-      await this.collectBluetooth(items);
       await this.collectDisplays(items);
       await this.collectPrinters(items);
-      await this.collectWifiAndRouter(items);
 
       if (this.options.includeNetworkNeighbors !== false) {
         await this.collectNetworkNeighbors(items);
@@ -104,42 +104,6 @@ export class ConnectedDevicesCollector {
     }
   }
 
-  private async collectBluetooth(items: ConnectedDevice[]): Promise<void> {
-    try {
-      const bluetoothList: any[] = await si.bluetoothDevices();
-      const windowsBluetoothRows = await this.getWindowsBluetoothDevices();
-
-      for (const device of bluetoothList) {
-        const displayName = this.limit(device.name || 'Bluetooth Device', 255);
-        if (!this.isLikelyUserBluetoothDevice(displayName)) {
-          continue;
-        }
-
-        const matchedWindowsDevice = this.matchWindowsBluetoothDevice(device, windowsBluetoothRows);
-        const vendorFromName = this.extractVendorFromText(device.name, matchedWindowsDevice?.name);
-        const baseVendor = this.nullable(device.manufacturer || matchedWindowsDevice?.manufacturer);
-        const vendor = this.isGenericVendor(baseVendor) ? this.nullable(vendorFromName) : baseVendor;
-        const model = this.nullable(device.type || matchedWindowsDevice?.name || device.name);
-
-        const identifier = this.limit(device.macDevice || device.address || device.name || 'bluetooth-unknown', 255);
-        items.push({
-          kind: 'bluetooth',
-          identifier,
-          displayName: this.limit(matchedWindowsDevice?.name || displayName, 255),
-          vendor,
-          model,
-          serialNumber: this.nullable(matchedWindowsDevice?.serial),
-          isConnected: device.connected !== false,
-          metadata: {
-            battery_percent: device.batteryPercent ?? null,
-            pnp_device_id: matchedWindowsDevice?.pnpDeviceId ?? null,
-          },
-        });
-      }
-    } catch (error: any) {
-      this.logger.warn('Failed to collect Bluetooth devices', { error: error.message || error });
-    }
-  }
 
   private async collectDisplays(items: ConnectedDevice[]): Promise<void> {
     try {
@@ -236,54 +200,6 @@ export class ConnectedDevicesCollector {
     }
   }
 
-  private async collectWifiAndRouter(items: ConnectedDevice[]): Promise<void> {
-    try {
-      const connections: any[] = await si.wifiConnections();
-      const activeConnection = connections.find((connection) => connection && (connection.ssid || connection.bssid));
-      if (!activeConnection) {
-        return;
-      }
-
-      const gatewayIp = await this.getDefaultGatewayIp();
-      const gatewayMac = gatewayIp ? await this.resolveMacFromArp(gatewayIp) : null;
-      const gatewayVendor = gatewayMac ? this.inferVendorFromMac(gatewayMac) : null;
-      const displayName = this.limit(
-        activeConnection.ssid
-          ? `Router (${activeConnection.ssid})`
-          : gatewayIp
-            ? `Router (${gatewayIp})`
-            : 'Router',
-        255
-      );
-
-      const identifier = this.limit(gatewayMac || activeConnection.bssid || gatewayIp || activeConnection.ssid || 'router', 255);
-      items.push({
-        kind: 'network_neighbor',
-        identifier,
-        displayName,
-        vendor: gatewayVendor,
-        model: null,
-        serialNumber: null,
-        isConnected: true,
-        metadata: {
-          role: 'router',
-          ssid: activeConnection.ssid ?? null,
-          bssid: activeConnection.bssid ?? null,
-          wifi_channel: activeConnection.channel ?? null,
-          wifi_frequency: activeConnection.frequency ?? null,
-          wifi_security: activeConnection.security ?? null,
-          wifi_signal_level: activeConnection.signalLevel ?? null,
-          wifi_quality: activeConnection.quality ?? null,
-          interface: activeConnection.iface ?? null,
-          gateway_ip: gatewayIp,
-          gateway_mac: gatewayMac,
-          gateway_vendor: gatewayVendor,
-        },
-      });
-    } catch (error: any) {
-      this.logger.warn('Failed to collect wifi/router details', { error: error.message || error });
-    }
-  }
 
   private async collectNetworkNeighbors(items: ConnectedDevice[]): Promise<void> {
     try {
@@ -749,10 +665,6 @@ export class ConnectedDevicesCollector {
     return /idle|ready|normal|printing/.test(status);
   }
 
-  private isLikelyUserBluetoothDevice(name: string): boolean {
-    const normalized = name.toLowerCase();
-    return !/service|transport|enumerator|protocol|rfcomm/.test(normalized);
-  }
 
   private isGenericDisplayValue(value: unknown): boolean {
     const normalized = String(value || '').trim().toLowerCase();
@@ -780,33 +692,7 @@ export class ConnectedDevicesCollector {
     return /root hub|host controller|xhci|port policy controller|generic usb hub|usb composite device/.test(text);
   }
 
-  private async getDefaultGatewayIp(): Promise<string | null> {
-    try {
-      const gateway = await si.networkGatewayDefault();
-      return gateway ? this.limit(gateway, 255) : null;
-    } catch {
-      return null;
-    }
-  }
 
-  private async resolveMacFromArp(ipAddress: string): Promise<string | null> {
-    try {
-      const osInfo = await si.osInfo();
-      const platform = (osInfo.platform || '').toLowerCase();
-      const command = platform.includes('win') ? 'arp -a' : 'arp -a';
-      const { stdout } = await execAsync(command, { maxBuffer: 5 * 1024 * 1024 });
-      const ipPattern = ipAddress.replace(/\./g, '\\.');
-      const regex = new RegExp(`${ipPattern}\\s+([0-9a-fA-F:-]{17})`, 'i');
-      const match = stdout.match(regex);
-      if (!match || !match[1]) {
-        return null;
-      }
-
-      return match[1].toLowerCase().replace(/-/g, ':');
-    } catch {
-      return null;
-    }
-  }
 
   private async getWindowsUsbDevices(): Promise<Array<{ name: string | null; manufacturer: string | null; pnpDeviceId: string | null; vid: string | null; pid: string | null; serial: string | null }>> {
     if (process.platform !== 'win32') {
@@ -836,31 +722,6 @@ export class ConnectedDevicesCollector {
     }
   }
 
-  private async getWindowsBluetoothDevices(): Promise<Array<{ name: string | null; manufacturer: string | null; pnpDeviceId: string | null; serial: string | null }>> {
-    if (process.platform !== 'win32') {
-      return [];
-    }
-
-    try {
-      const command = 'powershell -NoProfile -Command "Get-CimInstance Win32_PnPEntity -Filter \"PNPClass = \'Bluetooth\'\" | Select-Object Name,Manufacturer,PNPDeviceID | ConvertTo-Json -Compress"';
-      const { stdout } = await execAsync(command, { maxBuffer: 5 * 1024 * 1024 });
-      const parsed = JSON.parse(stdout || '[]');
-      const rows = Array.isArray(parsed) ? parsed : [parsed];
-
-      return rows.map((row: any) => {
-        const pnpDeviceId = this.nullable(row?.PNPDeviceID);
-        const parsedId = this.parsePnpDeviceId(pnpDeviceId);
-        return {
-          name: this.nullable(row?.Name),
-          manufacturer: this.nullable(row?.Manufacturer),
-          pnpDeviceId,
-          serial: parsedId.serial,
-        };
-      });
-    } catch {
-      return [];
-    }
-  }
 
   private async getWindowsPrinters(): Promise<Array<{ name: string | null; driverName: string | null; portName: string | null; pnpDeviceId: string | null; serial: string | null; status: string | null }>> {
     if (process.platform !== 'win32') {
@@ -911,23 +772,6 @@ export class ConnectedDevicesCollector {
     );
   }
 
-  private matchWindowsBluetoothDevice(
-    device: any,
-    windowsRows: Array<{ name: string | null; manufacturer: string | null; pnpDeviceId: string | null; serial: string | null }>
-  ): { name: string | null; manufacturer: string | null; pnpDeviceId: string | null; serial: string | null } | null {
-    if (!windowsRows.length) {
-      return null;
-    }
-
-    const deviceName = this.nullable(device?.name)?.toLowerCase();
-    const address = this.nullable(device?.macDevice || device?.address)?.replace(/[^a-fA-F0-9]/g, '').toUpperCase();
-
-    return (
-      windowsRows.find((row) => address && row.pnpDeviceId && row.pnpDeviceId.replace(/[^a-fA-F0-9]/g, '').toUpperCase().includes(address)) ||
-      windowsRows.find((row) => deviceName && row.name && row.name.toLowerCase().includes(deviceName)) ||
-      null
-    );
-  }
 
   private matchWindowsPrinter(
     printer: any,
@@ -1112,41 +956,6 @@ export class ConnectedDevicesCollector {
     return candidates[0] || null;
   }
 
-  private inferVendorFromMac(macAddress: string): string | null {
-    const prefix = macAddress
-      .toUpperCase()
-      .replace(/[^0-9A-F]/g, '')
-      .slice(0, 6);
-
-    if (prefix.length < 6) {
-      return null;
-    }
-
-    const ouiMap: Record<string, string> = {
-      'F4F26D': 'TP-Link',
-      'C83A35': 'TP-Link',
-      'B0487A': 'TP-Link',
-      'FC3497': 'Ubiquiti',
-      '24A43C': 'Ubiquiti',
-      '001A11': 'Cisco',
-      'A44CC8': 'Cisco',
-      '485D60': 'MikroTik',
-      'D4CA6D': 'MikroTik',
-      'C43DC7': 'ASUS',
-      '049226': 'ASUS',
-      'F8A9D0': 'Huawei',
-      '04C06F': 'Huawei',
-      '2C3AFD': 'Netgear',
-      '9CC9EB': 'Netgear',
-      '34CE00': 'D-Link',
-      '1C7EE5': 'D-Link',
-      '5CC7D7': 'Tenda',
-      '9C3DCF': 'ZTE',
-      '28285D': 'ZTE',
-    };
-
-    return ouiMap[prefix] || null;
-  }
 
   private nullable(value: unknown): string | null {
     if (value === undefined || value === null) {

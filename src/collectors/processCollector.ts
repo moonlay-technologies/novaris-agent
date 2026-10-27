@@ -132,7 +132,8 @@ export class ProcessCollector {
             pid: proc.pid,
             cpuUsage,
             ramUsage,
-            command: proc.command || null,
+            // Command lines can carry tokens, passwords and file paths: never collected
+            command: null,
             collectedAt,
           });
         } catch (error) {
