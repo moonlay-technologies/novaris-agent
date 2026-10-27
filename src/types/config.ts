@@ -15,6 +15,9 @@ export interface AgentConfig {
   apiKey: string;
   assetTag: string; // Required: Asset tag to identify the device
   deviceId?: number;
+  // Asset tag deviceId was resolved for. When it no longer matches assetTag the
+  // device is looked up again, so changing the tag re-links the agent.
+  deviceAssetTag?: string;
   hostname?: string;
   // Left unset until the first-run picker writes it (like assetTag/apiKey) - its absence is what
   // gates showing that picker, so it must NOT get a DEFAULT_CONFIG value. Network monitoring
@@ -99,7 +102,7 @@ export const DEFAULT_CONFIG: Partial<AgentConfig> = {
   logsMinSeverity: 'warning',
   logsIncludeRaw: false,
   collectSecurityEvents: true,
-  collectProcesses: true,
+  collectProcesses: false, // Optional investigation snapshots; enable deliberately when needed
   processInterval: 60, // 1 minute
   collectYaraScan: true,
   yaraScanInterval: 86400, // 24 hours - a real content scan is far more expensive than the other periodic checks

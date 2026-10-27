@@ -112,7 +112,16 @@ export class AgentService {
         throw new Error('Asset Tag is required. Please set NOVARIS_ASSET_TAG environment variable or config.json');
       }
 
-      // Initial device registration or lookup
+      // Initial device registration or lookup. A deviceId resolved for another
+      // asset tag (the tag was changed in settings) is stale and looked up again,
+      // unless NOVARIS_DEVICE_ID pins the device explicitly.
+      const deviceIsStale = !!this.config.deviceId
+        && this.config.deviceAssetTag !== this.config.assetTag
+        && !process.env.NOVARIS_DEVICE_ID;
+      if (deviceIsStale) {
+        this.logger.info(`Asset tag changed (${this.config.deviceAssetTag ?? 'unknown'} -> ${this.config.assetTag}); re-linking device ${this.config.deviceId}`);
+        this.config.deviceId = undefined;
+      }
       if (!this.config.deviceId) {
         await this.registerOrFindDevice();
       }
@@ -263,7 +272,8 @@ export class AgentService {
         if (asset.deviceId) {
           this.logger.info(`Found existing device with ID: ${asset.deviceId} for asset tag: ${this.config.assetTag}`);
           this.config.deviceId = asset.deviceId;
-          this.persistConfig({ deviceId: asset.deviceId });
+          this.config.deviceAssetTag = this.config.assetTag;
+          this.persistConfig({ deviceId: asset.deviceId, deviceAssetTag: this.config.assetTag });
           return;
         }
       }
@@ -275,7 +285,8 @@ export class AgentService {
 
       const deviceId = await this.reportingService.registerDevice(deviceInfo, this.config.assetTag);
       this.config.deviceId = deviceId;
-      this.persistConfig({ deviceId });
+      this.config.deviceAssetTag = this.config.assetTag;
+      this.persistConfig({ deviceId, deviceAssetTag: this.config.assetTag });
 
       this.logger.info(`Device registered with ID: ${deviceId} for asset tag: ${this.config.assetTag}`);
     } catch (error) {

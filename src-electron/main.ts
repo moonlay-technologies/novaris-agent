@@ -13,6 +13,7 @@ import { AgentRuntimeSupervisor } from './agentRuntime/supervisor';
 import { AgentChatResponseType, AgentChatService } from './agentRuntime/chatService';
 import { EncryptedFileStore } from './userSession/encryptedFileStore';
 import { UserSessionService } from './userSession/userSessionService';
+import { HelpdeskService } from './helpdesk/helpdeskService';
 import { ProcessRegistryService } from '../dist/services/processRegistryService';
 import { YaraPluginService } from '../dist/services/yaraPluginService';
 import { AutoStartService } from './startup/autoStartService';
@@ -59,6 +60,8 @@ const agentRuntime = new AgentRuntimeManager({
   userSession,
 });
 const agentChatService = new AgentChatService(() => agentRuntime.endpoint());
+// Tickets, access requests and asset requests filed as the signed-in user.
+const helpdesk = new HelpdeskService(userSession);
 let assistantUserId: number | null = null;
 userSession.onChange((status) => {
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -809,6 +812,24 @@ ipcMain.handle('user-change-password', async (_event, currentPassword: string, n
   }
 });
 
+// Self-service requests. Each handler returns { success, data } or { success: false, message }.
+function helpdeskHandler<A extends unknown[]>(channel: string, fallback: string, run: (...args: A) => Promise<unknown>): void {
+  ipcMain.handle(channel, async (_event, ...args: unknown[]) => {
+    try {
+      return { success: true, data: await run(...(args as A)) };
+    } catch (error: any) {
+      logger.warn('Helpdesk request failed', { channel, status: error.response?.status, message: error.message });
+      return { success: false, message: backendErrorMessage(error, fallback) };
+    }
+  });
+}
+helpdeskHandler('helpdesk-list-tickets', 'Unable to load your tickets', (status?: unknown) => helpdesk.listTickets(status));
+helpdeskHandler('helpdesk-create-ticket', 'Unable to create the ticket', (input: unknown) => helpdesk.createTicket(input));
+helpdeskHandler('helpdesk-asset-categories', 'Unable to load asset categories', () => helpdesk.listAssetCategories());
+helpdeskHandler('helpdesk-request-asset', 'Unable to submit the asset request', (input: unknown) => helpdesk.requestAsset(input));
+helpdeskHandler('helpdesk-access-systems', 'Unable to load systems', () => helpdesk.listAccessSystems());
+helpdeskHandler('helpdesk-request-access', 'Unable to submit the access request', (input: unknown) => helpdesk.requestAccess(input));
+
 ipcMain.handle('agent-chat-connect', async () => {
   try {
     return await agentChatService.connect();
@@ -855,6 +876,64 @@ ipcMain.handle('get-config', () => {
   } catch (error) {
     logger.error('Failed to read configuration, returning defaults', { error });
     return { ...DEFAULT_CONFIG } as AgentConfig;
+  }
+});
+
+// Looks up an asset tag before Settings saves it, so the user can confirm which
+// asset this device will be linked to. The URL and key typed in the form are
+// used when given (the key field is blank when it is unchanged); otherwise the
+// saved ones. Only a display summary of the asset reaches the renderer.
+ipcMain.handle('lookup-asset', async (_event, request: { assetTag?: string; apiUrl?: string; apiKey?: string }) => {
+  const assetTag = typeof request?.assetTag === 'string' ? request.assetTag.trim() : '';
+  if (!assetTag) {
+    return { status: 'error', error: 'Asset tag is required' };
+  }
+  let saved: Partial<AgentConfig> = {};
+  try {
+    saved = readConfig();
+  } catch {
+    // Nothing saved yet: the form must supply the connection.
+  }
+  const apiUrl = (request.apiUrl || saved.apiUrl || '').replace(/\/+$/, '');
+  const apiKey = request.apiKey || saved.apiKey;
+  if (!apiUrl || !apiKey) {
+    return { status: 'error', error: 'Backend API URL and API key are required to look up the asset' };
+  }
+
+  try {
+    const response = await axios.get(`${apiUrl}/assets/by-tag/${encodeURIComponent(assetTag)}`, {
+      headers: { 'X-API-Key': apiKey },
+      timeout: 15000,
+    });
+    const asset = response.data?.data;
+    if (!asset) {
+      return { status: 'not_found', assetTag };
+    }
+    return {
+      status: 'found',
+      asset: {
+        id: asset.id,
+        assetTag: asset.asset_tag,
+        name: asset.name,
+        assetType: asset.asset_type,
+        brand: asset.brand,
+        model: asset.model,
+        serialNumber: asset.serial_number,
+        status: asset.status,
+        lifecycleStatus: asset.lifecycle_status,
+        location: asset.location_platform,
+        clientName: asset.client_name,
+      },
+    };
+  } catch (error: any) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return { status: 'not_found', assetTag };
+    }
+    if (axios.isAxiosError(error) && (error.response?.status === 401 || error.response?.status === 403)) {
+      return { status: 'error', error: 'The backend rejected the API key' };
+    }
+    logger.warn('Asset lookup failed', { assetTag, error: error.message });
+    return { status: 'error', error: `Unable to reach the backend: ${error.message}` };
   }
 });
 

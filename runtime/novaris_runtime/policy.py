@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 READ_TOOLS: tuple[str, ...] = ("ls", "read_file", "glob", "grep")
 WRITE_TOOLS: tuple[str, ...] = ("write_file", "edit_file", "delete")
-KNOWN_POLICY_TOOLS = frozenset({"file_reader", "file_writer", "web_search"})
+KNOWN_POLICY_TOOLS = frozenset(
+    {"file_reader", "file_writer", "web_search", "create_ticket", "request_access", "request_asset"}
+)
 
 
 @dataclass(frozen=True)
@@ -22,6 +24,9 @@ class ToolPolicy:
     # Hard deny rules, enforced even if the model calls a tool it was not shown.
     permissions: list[FilesystemPermission] = field(default_factory=list)
     web_search: bool = False
+    create_ticket: bool = False
+    request_access: bool = False
+    request_asset: bool = False
 
     @property
     def can_write(self) -> bool:
@@ -52,4 +57,7 @@ def build_tool_policy(allowed_tools: Iterable[str]) -> ToolPolicy:
         filesystem_tools=tuple(filesystem_tools),
         permissions=permissions,
         web_search="web_search" in allowed,
+        create_ticket="create_ticket" in allowed,
+        request_access="request_access" in allowed,
+        request_asset="request_asset" in allowed,
     )
