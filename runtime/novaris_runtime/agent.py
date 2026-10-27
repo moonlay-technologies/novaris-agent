@@ -13,6 +13,15 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from .approvals import ApprovalStore
 from .config import RuntimeConfig
 from .policy import WRITE_TOOLS, ToolPolicy, build_tool_policy
+from .helpdesk import (
+    CREATE_TICKET_TOOL,
+    REQUEST_ACCESS_TOOL,
+    REQUEST_ASSET_TOOL,
+    MeClient,
+    make_access_request_tools,
+    make_asset_request_tools,
+    make_ticket_tools,
+)
 from .tools import ASK_USER_TOOL, ask_user, make_web_search_tool
 
 MEMORY_ROUTE = "/memories/"
@@ -26,6 +35,8 @@ RUNTIME_PROMPT = """
   remember something; never store secrets there.
 - Changes to files need the user's approval. If a change is rejected, do not retry it unless the user asks.
 - Use `ask_user` when a request is ambiguous instead of guessing.
+- Tickets, access requests and asset requests are filed as the user and need their approval. Collect the details
+  first (ask for anything you do not know, such as their supervisor), and look up ids with the `list_*` tools.
 """
 
 
@@ -63,16 +74,27 @@ def build_backend(config: RuntimeConfig) -> CompositeBackend:
     )
 
 
+def submit_tools(policy: ToolPolicy) -> dict[str, bool]:
+    """Tools that file something with the backend as the user, so they need the user's approval."""
+    return {
+        CREATE_TICKET_TOOL: policy.create_ticket,
+        REQUEST_ACCESS_TOOL: policy.request_access,
+        REQUEST_ASSET_TOOL: policy.request_asset,
+    }
+
+
 def build_interrupt_on(policy: ToolPolicy, approvals: ApprovalStore) -> dict[str, Any]:
     interrupt_on: dict[str, Any] = {
         ASK_USER_TOOL: {"allowed_decisions": ["respond"]},
     }
+    approval_tools = [name for name, enabled in submit_tools(policy).items() if enabled]
     if policy.can_write:
-        for tool_name in WRITE_TOOLS:
-            interrupt_on[tool_name] = {
-                "allowed_decisions": ["approve", "reject"],
-                "when": approvals.interrupt_predicate(tool_name),
-            }
+        approval_tools.extend(WRITE_TOOLS)
+    for tool_name in approval_tools:
+        interrupt_on[tool_name] = {
+            "allowed_decisions": ["approve", "reject"],
+            "when": approvals.interrupt_predicate(tool_name),
+        }
     return interrupt_on
 
 
@@ -88,6 +110,13 @@ def build_agent(
     tools: list[Any] = [ask_user]
     if policy.web_search and config.web_search_url:
         tools.append(make_web_search_tool(config.web_search_url, config.access_token))
+    me_client = MeClient(config.backend_base_url, config.access_token)
+    if policy.create_ticket:
+        tools.extend(make_ticket_tools(me_client))
+    if policy.request_access:
+        tools.extend(make_access_request_tools(me_client))
+    if policy.request_asset:
+        tools.extend(make_asset_request_tools(me_client))
 
     # Replaces the built-in FilesystemMiddleware by name so only the policy's tools are exposed. The
     # general-purpose subagent inherits this replacement, so it gets the same restricted toolset.

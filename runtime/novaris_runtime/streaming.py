@@ -66,5 +66,7 @@ class StreamTranslator:
 def describe_action(action: dict[str, Any]) -> str:
     """One readable line for an approval prompt, e.g. `write_file /notes/todo.md`."""
     args = action.get("args") or {}
-    target = args.get("file_path") or args.get("path") or ""
+    target = args.get("file_path") or args.get("path") or args.get("title") or ""
+    if not target and "system_id" in args:
+        target = f"system {args['system_id']}: {args.get('access_level', '')}".strip()
     return f"{action.get('name', 'tool')} {target}".strip()

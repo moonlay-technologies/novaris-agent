@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAgentLogs: (lines?: number) => ipcRenderer.invoke('get-agent-logs', lines),
   getConfig: () => ipcRenderer.invoke('get-config'),
   saveConfig: (config: unknown) => ipcRenderer.invoke('save-config', config),
+  lookupAsset: (request: { assetTag: string; apiUrl?: string; apiKey?: string }) => ipcRenderer.invoke('lookup-asset', request),
 
   // YARA scanner plugin
   yaraPluginStatus: () => ipcRenderer.invoke('yara-plugin-status'),
@@ -44,6 +45,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('user-change-password', currentPassword, newPassword, confirmation),
   onUserSessionChanged: (callback: (event: any, data: any) => void) =>
     ipcRenderer.on('user-session-changed', callback),
+
+  // Self-service helpdesk as the signed-in user. Results are { success, data } or { success: false, message }.
+  helpdeskListTickets: (status?: string) => ipcRenderer.invoke('helpdesk-list-tickets', status),
+  helpdeskCreateTicket: (ticket: unknown) => ipcRenderer.invoke('helpdesk-create-ticket', ticket),
+  helpdeskAssetCategories: () => ipcRenderer.invoke('helpdesk-asset-categories'),
+  helpdeskRequestAsset: (request: unknown) => ipcRenderer.invoke('helpdesk-request-asset', request),
+  helpdeskAccessSystems: () => ipcRenderer.invoke('helpdesk-access-systems'),
+  helpdeskRequestAccess: (request: unknown) => ipcRenderer.invoke('helpdesk-request-access', request),
 
   // Local AI assistant. The user's JWT and the runtime port/token never reach the renderer.
   agentRuntimeStatus: () => ipcRenderer.invoke('agent-runtime-status'),

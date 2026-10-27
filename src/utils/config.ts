@@ -19,7 +19,10 @@ const getInstallDir = (): string => {
   // runs: process.execPath is the Node binary itself, so the installation is
   // the package root above this compiled file, not Node's own folder.
   const executable = path.basename(process.execPath).toLowerCase();
-  if (executable === 'node' || executable === 'node.exe') {
+  // The same holds for an unpackaged Electron run (`electron dist-electron/main.js`):
+  // process.execPath is node_modules/electron/dist/electron.exe, whose folder
+  // is no installation and may hold a stray config.json.
+  if (executable === 'node' || executable === 'node.exe' || (process as { defaultApp?: boolean }).defaultApp) {
     return path.resolve(__dirname, '..', '..');
   }
 

@@ -27,6 +27,17 @@ npm start
 
 ### Configuration
 
+Running-process snapshots are disabled by default, including in newly downloaded
+web-app configuration templates. Existing configurations with `collectProcesses: true`
+remain enabled. To stop routine snapshots on those devices, set
+`collectProcesses: false` in `config.json` (or `NOVARIS_COLLECT_PROCESSES=false`
+in the service environment, which takes precedence) and restart the agent.
+For a specific investigation, an administrator can enable the existing Running
+processes setting, then disable it and restart after the investigation. This is
+periodic collection while enabled, not a one-shot capture or automatic expiry.
+Enabled snapshots still include command details. Historical backend records are
+not deleted by this setting. See [collector decisions and rollout](docs/process-collection-default.md).
+
 ### Getting an API Key
 
 1. **Login to the backend** as an admin/superadmin user
