@@ -171,6 +171,13 @@ npm run build
 npm run dist:full        # builds the assistant runtime bundle, then the installer
 ```
 
+Windows builds are unsigned and set `win.signAndEditExecutable` to `false`.
+This avoids extracting electron-builder's winCodeSign tools, whose macOS symlinks
+require additional Windows privileges. The app executable retains Electron's
+embedded icon and version metadata; installer branding still uses the configured
+icon. To customize the executable resources or enable signing, remove this setting
+and build from an elevated terminal with permission to create symbolic links.
+
 ## Logs
 
 Logs are stored in the `logs/` directory:

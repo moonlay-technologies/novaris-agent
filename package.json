@@ -73,6 +73,7 @@
         "msiwrapped"
       ],
       "sign": null,
+      "signAndEditExecutable": false,
       "icon": "src-electron/assets/app_icon.png",
       "extraResources": [
         {
